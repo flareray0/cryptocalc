@@ -266,21 +266,48 @@ H:\cryptocalc\
 - USD 建て総資産は `USDJPY` または USD-like レートが無いと未評価になります
 
 ## 起動方法
-### 1. 依存インストール
+### 1. venv 作成
 ```powershell
 cd H:\cryptocalc
+python -m venv venv
+```
+
+### 2. venv を有効化
+PowerShell の場合:
+```powershell
+cd H:\cryptocalc
+.\venv\Scripts\Activate.ps1
+```
+
+コマンドプロンプト (`cmd.exe`) の場合:
+```bat
+cd /d H:\cryptocalc
+venv\Scripts\activate.bat
+```
+
+### 3. 依存インストール
+```powershell
+cd H:\cryptocalc
+.\venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 ```
 
-### 2. ローカル Web UI + API 起動
+### 4. ローカル Web UI + API 起動
 ```powershell
 cd H:\cryptocalc
+.\venv\Scripts\Activate.ps1
 python -m uvicorn app.api.main:app --host 127.0.0.1 --port 8017
 ```
 
-### 3. ブラウザで開く
+### 5. ブラウザで開く
 - UI: `http://127.0.0.1:8017/dashboard`
 - API Docs: `http://127.0.0.1:8017/docs`
+
+PowerShell で `Activate.ps1` が実行できない場合は、次のように一時的に実行ポリシーを緩めるか、`cmd.exe` 側の `activate.bat` を使ってね。
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\venv\Scripts\Activate.ps1
+```
 
 ## 使い方
 1. `ファイル取込` 画面で Binance Japan CSV / XLSX を読み込む
@@ -302,7 +329,7 @@ python -m pytest -q
 ```
 
 現在のローカル確認:
-- `11 passed`
+- `13 passed`
 - 実 Binance Japan XLSX sample の parser 読込確認済み
 
 ## ロールバック
