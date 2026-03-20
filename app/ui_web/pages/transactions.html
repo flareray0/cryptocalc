@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h3>フィルタ</h3>
+  <form action="/transactions" method="get">
+    <div class="three-col">
+      <label>年度
+        <select name="year">
+          <option value="">すべて</option>
+          {% for year in available_years %}
+          <option value="{{ year }}" {% if filter_year == year %}selected{% endif %}>{{ year }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>銘柄
+        <input type="text" name="asset" value="{{ filter_asset or '' }}">
+      </label>
+      <label>取引種別
+        <input type="text" name="tx_type" value="{{ filter_tx_type or '' }}" placeholder="buy / sell / crypto_swap">
+      </label>
+    </div>
+    <label>要確認のみ
+      <select name="review_required">
+        <option value="">両方</option>
+        <option value="true" {% if filter_review_required == true %}selected{% endif %}>true</option>
+        <option value="false" {% if filter_review_required == false %}selected{% endif %}>false</option>
+      </select>
+    </label>
+    <button type="submit">絞り込む</button>
+  </form>
+</section>
+
+<section class="table-card">
+  <table>
+    <thead>
+      <tr>
+        <th>timestamp_jst</th>
+        <th>tx_type</th>
+        <th>base</th>
+        <th>quote</th>
+        <th>quantity</th>
+        <th>gross_jpy</th>
+        <th>fee</th>
+        <th>source</th>
+        <th>row</th>
+        <th>status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for tx in transactions %}
+      <tr>
+        <td>{{ tx.timestamp_jst }}</td>
+        <td>{{ tx.tx_type }}</td>
+        <td>{{ tx.base_asset }}</td>
+        <td>{{ tx.quote_asset }}</td>
+        <td>{{ tx.quantity }}</td>
+        <td>{{ tx.gross_amount_jpy }}</td>
+        <td>{{ tx.fee_amount }} {{ tx.fee_asset }}</td>
+        <td>{{ tx.source_file }}</td>
+        <td>{{ tx.raw_row_number }}</td>
+        <td>
+          {% if tx.review_flag %}
+          <span class="pill warn">要確認</span>
+          {% else %}
+          <span class="pill">OK</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="10">表示できる取引がありません。</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="summary-grid">
+  <article>
+    <h3>取引件数</h3>
+    <div class="big">{{ transactions_count }}</div>
+  </article>
+  <article>
+    <h3>要確認件数</h3>
+    <div class="big">{{ review_required_count }}</div>
+  </article>
+  <article>
+    <h3>最終同期</h3>
+    <div class="big">{{ sync_status.last_synced_at or "未同期" }}</div>
+  </article>
+  <article>
+    <h3>既定計算方式</h3>
+    <div class="big">{{ settings.default_method }}</div>
+  </article>
+</section>
+
+{% if analysis_summary and analysis_summary.latest_snapshot %}
+<section class="summary-grid">
+  <article>
+    <h3>総資産 JPY</h3>
+    <div class="big">{{ analysis_summary.latest_snapshot.total_equity_jpy }}</div>
+  </article>
+  <article>
+    <h3>総資産 USD</h3>
+    <div class="big">{{ analysis_summary.latest_snapshot.total_equity_usd or "未評価" }}</div>
+  </article>
+  <article>
+    <h3>含み損益</h3>
+    <div class="big">{{ analysis_summary.latest_snapshot.unrealized_pnl_jpy }}</div>
+  </article>
+  <article>
+    <h3>benchmark 比較</h3>
+    <div class="big">{{ analysis_summary.latest_snapshot.edge_vs_benchmark_jpy }}</div>
+  </article>
+</section>
+{% endif %}
+
+<section class="two-col">
+  <div class="panel">
+    <h3>年次サマリ概要</h3>
+    {% if yearly_summary %}
+    <ul class="list">
+      <li>年: {{ yearly_summary.year }}</li>
+      <li>方式: {{ yearly_summary.method }}</li>
+      <li>収入金額相当: {{ yearly_summary.income_amount_jpy }}</li>
+      <li>必要経費相当: {{ yearly_summary.necessary_expenses_jpy }}</li>
+      <li>実現損益: {{ yearly_summary.realized_pnl_jpy }}</li>
+      <li>手数料合計: {{ yearly_summary.fee_jpy_total }}</li>
+    </ul>
+    {% else %}
+    <p class="muted">まだ計算結果がありません。先に取込してから計算を実行してね。</p>
+    {% endif %}
+  </div>
+  <div class="panel">
+    {% if analysis_summary and analysis_summary.latest_snapshot %}
+    <h3>分析レイヤー概要</h3>
+    <ul class="list">
+      <li>実現損益: {{ analysis_summary.latest_snapshot.realized_pnl_jpy }}</li>
+      <li>含み損益: {{ analysis_summary.latest_snapshot.unrealized_pnl_jpy }}</li>
+      <li>トレードエッジ: {{ analysis_summary.latest_snapshot.trading_edge_jpy }}</li>
+      <li><a href="/analysis">詳しい分析画面へ</a></li>
+    </ul>
+    {% else %}
+    <h3>初回案内</h3>
+    <ul class="list">
+      <li>Binance Japan の年間取引報告書導線では、総平均法を既定推奨にしているよ。</li>
+      <li>評価方法の未届出前提では、まず総平均法で確認しやすいようにしてあるよ。</li>
+      <li>暗号資産同士交換で JPY 評価が無いものは要確認へ残すよ。</li>
+      <li>分析レイヤーは税務計算を変えず、別画面で追加表示するよ。</li>
+    </ul>
+    {% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <h3>最近の取込</h3>
+  <div class="table-card">
+    <table>
+      <thead>
+        <tr>
+          <th>batch_id</th>
+          <th>source_file</th>
+          <th>source_kind</th>
+          <th>取込件数</th>
+          <th>要確認</th>
+          <th>重複疑い</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in latest_batches %}
+        <tr>
+          <td>{{ row.batch_id }}</td>
+          <td>{{ row.source_file }}</td>
+          <td>{{ row.source_kind }}</td>
+          <td>{{ row.transaction_count }}</td>
+          <td>{{ row.review_required_count }}</td>
+          <td>{{ row.duplicate_count }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6">まだ取込履歴がないよ。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

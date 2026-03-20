@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h3>国税庁転記補助エクスポート</h3>
+  <form action="/ui/exports/nta" method="post">
+    <div class="three-col">
+      <label>年度
+        <select name="year">
+          {% for year in available_years %}
+          <option value="{{ year }}" {% if selected_year == year %}selected{% endif %}>{{ year }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>方式
+        <select name="method">
+          <option value="total_average" {% if (selected_method or settings.default_method) == "total_average" %}selected{% endif %}>総平均法</option>
+          <option value="moving_average" {% if (selected_method or settings.default_method) == "moving_average" %}selected{% endif %}>移動平均法</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit">CSV / Excel を生成</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h3>分析エクスポート</h3>
+  <form action="/ui/exports/analysis" method="post">
+    <div class="three-col">
+      <label>年度
+        <select name="year">
+          {% for year in available_years %}
+          <option value="{{ year }}" {% if selected_year == year %}selected{% endif %}>{{ year }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>参照方式
+        <select name="method_reference">
+          <option value="total_average" {% if (selected_method_reference or settings.default_method) == "total_average" %}selected{% endif %}>総平均法</option>
+          <option value="moving_average" {% if (selected_method_reference or settings.default_method) == "moving_average" %}selected{% endif %}>移動平均法</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit">portfolio / edge / benchmark を生成</button>
+  </form>
+  <p class="muted">portfolio_snapshot, asset_quantity_history, pnl_breakdown, benchmark_comparison, edge_report を CSV / JSON で出すよ。</p>
+</section>
+
+<section class="panel">
+  <h3>生成済みファイル</h3>
+  <div class="table-card">
+    <table>
+      <thead>
+        <tr>
+          <th>file</th>
+          <th>download</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for name in export_files %}
+        <tr>
+          <td>{{ name }}</td>
+          <td><a href="/api/v1/reports/download?name={{ name }}">download</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="2">まだ生成ファイルがありません。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

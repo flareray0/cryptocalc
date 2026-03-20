@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h3>計算実行</h3>
+  <form action="/ui/calc/run" method="post">
+    <div class="three-col">
+      <label>年度
+        <select name="year">
+          {% for year in available_years %}
+          <option value="{{ year }}" {% if selected_year == year or (not selected_year and settings.default_year == year) %}selected{% endif %}>{{ year }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>計算方式
+        <select name="method">
+          <option value="total_average" {% if (selected_method or settings.default_method) == "total_average" %}selected{% endif %}>総平均法</option>
+          <option value="moving_average" {% if (selected_method or settings.default_method) == "moving_average" %}selected{% endif %}>移動平均法</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit">計算を実行</button>
+  </form>
+</section>
+
+{% if run_data %}
+<section class="summary-grid">
+  <article>
+    <h3>年</h3>
+    <div class="big">{{ run_data.yearly_summary.year }}</div>
+  </article>
+  <article>
+    <h3>方式</h3>
+    <div class="big">{{ run_data.yearly_summary.method }}</div>
+  </article>
+  <article>
+    <h3>実現損益</h3>
+    <div class="big">{{ run_data.yearly_summary.realized_pnl_jpy }}</div>
+  </article>
+  <article>
+    <h3>要確認件数</h3>
+    <div class="big">{{ run_data.yearly_summary.review_required_count }}</div>
+  </article>
+</section>
+
+<section class="panel">
+  <h3>銘柄別サマリ</h3>
+  <div class="table-card">
+    <table>
+      <thead>
+        <tr>
+          <th>asset</th>
+          <th>取得数量</th>
+          <th>売却数量</th>
+          <th>年末残高</th>
+          <th>平均取得単価</th>
+          <th>実現損益</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in run_data.asset_summaries %}
+        <tr>
+          <td>{{ row.asset }}</td>
+          <td>{{ row.acquired_quantity }}</td>
+          <td>{{ row.disposed_quantity }}</td>
+          <td>{{ row.ending_quantity }}</td>
+          <td>{{ row.average_cost_per_unit_jpy }}</td>
+          <td>{{ row.realized_pnl_jpy }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% else %}
+<section class="panel">
+  <p class="muted">まだ計算結果がありません。年度と方式を選んで実行してね。</p>
+</section>
+{% endif %}
+{% endblock %}

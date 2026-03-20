@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="three-col">
+  <div class="panel">
+    <h3>Binance Japan CSV / 年間取引報告書</h3>
+    <form action="/ui/import/csv" method="post" enctype="multipart/form-data">
+      <label>取込ファイル
+        <input type="file" name="file" required>
+      </label>
+      <button type="submit">CSV / XLSX を取り込む</button>
+    </form>
+  </div>
+  <div class="panel">
+    <h3>手動補正 CSV</h3>
+    <form action="/ui/import/manual-adjustments" method="post" enctype="multipart/form-data">
+      <label>手動補正ファイル
+        <input type="file" name="file" required>
+      </label>
+      <button type="submit">手動補正を取り込む</button>
+    </form>
+  </div>
+  <div class="panel">
+    <h3>JPY補完レート CSV</h3>
+    <form action="/ui/import/manual-rates" method="post" enctype="multipart/form-data">
+      <label>レートCSV
+        <input type="file" name="file" required>
+      </label>
+      <button type="submit">レートを取り込む</button>
+    </form>
+  </div>
+</section>
+
+<section class="panel">
+  <h3>取込後に確認するポイント</h3>
+  <ul class="list">
+    <li>未知カラムや未知取引種別は取込ログに残るよ。</li>
+    <li>CSV は read-only import で、元ファイルは上書きしないよ。</li>
+    <li>要確認件数が増えたら、JPY未評価や未知取引が混ざっていないか見てね。</li>
+  </ul>
+</section>
+
+<section class="panel">
+  <h3>最近の取込履歴</h3>
+  <div class="table-card">
+    <table>
+      <thead>
+        <tr>
+          <th>batch_id</th>
+          <th>file</th>
+          <th>kind</th>
+          <th>件数</th>
+          <th>要確認</th>
+          <th>未知取引種別</th>
+          <th>未知カラム</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in latest_batches %}
+        <tr>
+          <td>{{ row.batch_id }}</td>
+          <td>{{ row.source_file }}</td>
+          <td>{{ row.source_kind }}</td>
+          <td>{{ row.transaction_count }}</td>
+          <td>{{ row.review_required_count }}</td>
+          <td>{{ row.unknown_tx_types|join(", ") }}</td>
+          <td>{{ row.unknown_column_names|join(", ") }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7">まだ取込履歴がありません。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

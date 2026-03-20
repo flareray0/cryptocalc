@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h3>要確認フィルタ</h3>
+  <form action="/review" method="get">
+    <label>年度
+      <select name="year">
+        <option value="">すべて</option>
+        {% for year in available_years %}
+        <option value="{{ year }}" {% if filter_year == year %}selected{% endif %}>{{ year }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit">絞り込む</button>
+  </form>
+</section>
+
+<section class="table-card">
+  <table>
+    <thead>
+      <tr>
+        <th>timestamp_jst</th>
+        <th>tx_type</th>
+        <th>base</th>
+        <th>quote</th>
+        <th>理由</th>
+        <th>元ファイル</th>
+        <th>行番号</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for tx in review_rows %}
+      <tr>
+        <td>{{ tx.timestamp_jst }}</td>
+        <td>{{ tx.tx_type }}</td>
+        <td>{{ tx.base_asset }}</td>
+        <td>{{ tx.quote_asset }}</td>
+        <td>{{ tx.review_reasons|join(", ") }}</td>
+        <td>{{ tx.source_file }}</td>
+        <td>{{ tx.raw_row_number }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">要確認取引はありません。</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

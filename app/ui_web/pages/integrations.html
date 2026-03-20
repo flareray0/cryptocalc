@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="two-col">
+  <div class="panel">
+    <h3>Binance Japan API 接続</h3>
+    <p class="muted">read-only 権限を推奨だよ。API が不十分でも CSV import はそのまま使えるよ。</p>
+    {% if sync_status.secret_saved %}
+    <div class="notice">保存済みキーあり: {{ sync_status.api_key_hint }} / base_url={{ sync_status.base_url }}</div>
+    {% endif %}
+    <form action="/ui/integrations/connect" method="post">
+      <label>API Key
+        <input type="password" name="api_key" placeholder="{% if sync_status.secret_saved %}空欄なら保存済みを使用{% else %}API Key{% endif %}">
+      </label>
+      <label>API Secret
+        <input type="password" name="api_secret" placeholder="{% if sync_status.secret_saved %}空欄なら保存済みを使用{% else %}API Secret{% endif %}">
+      </label>
+      <label>Base URL
+        <input type="text" name="base_url" value="{{ sync_status.base_url or settings.binance_japan_api.base_url }}">
+      </label>
+      <button type="submit">接続を保存してテスト</button>
+    </form>
+    <form action="/ui/integrations/disconnect" method="post">
+      <button class="secondary" type="submit">接続解除</button>
+    </form>
+  </div>
+  <div class="panel">
+    <h3>同期実行</h3>
+    <form action="/ui/integrations/sync" method="post">
+      <label>symbols
+        <input type="text" name="symbols" value="{{ sync_status.default_symbols or settings.binance_japan_api.default_symbols }}" placeholder="BTCJPY,ETHJPY,XRPBTC" required>
+      </label>
+      <label>start_time_ms
+        <input type="text" name="start_time_ms" value="{{ sync_status.default_start_time_ms or settings.binance_japan_api.default_start_time_ms or '' }}" placeholder="任意">
+      </label>
+      <label>end_time_ms
+        <input type="text" name="end_time_ms" value="{{ sync_status.default_end_time_ms or settings.binance_japan_api.default_end_time_ms or '' }}" placeholder="任意">
+      </label>
+      <button type="submit">read-only 同期</button>
+    </form>
+  </div>
+</section>
+
+<section class="summary-grid">
+  <article>
+    <h3>接続状態</h3>
+    <div class="big">{{ "connected" if sync_status.connected else "not connected" }}</div>
+  </article>
+  <article>
+    <h3>キー保存状態</h3>
+    <div class="big">{{ "saved" if sync_status.secret_saved else "not saved" }}</div>
+  </article>
+  <article>
+    <h3>最終テスト</h3>
+    <div class="big">{{ sync_status.last_tested_at or "未実施" }}</div>
+  </article>
+  <article>
+    <h3>最終同期</h3>
+    <div class="big">{{ sync_status.last_synced_at or "未同期" }}</div>
+  </article>
+  <article>
+    <h3>最終同期件数</h3>
+    <div class="big">{{ sync_status.last_sync_count or 0 }}</div>
+  </article>
+</section>
+{% endblock %}

@@ -1,0 +1,7 @@
+timestamp_utc,asset,jpy_rate,source
+2025-01-10 00:00:00,USD,150,manual_fx
+2025-06-01 00:00:00,USD,145,manual_fx
+2025-07-01 00:00:00,BTC,11000000,manual_rate
+2025-07-01 00:00:00,USD,146,manual_fx
+2025-08-01 00:00:00,BNB,100000,manual_rate
+2025-08-01 00:00:00,USD,147,manual_fx

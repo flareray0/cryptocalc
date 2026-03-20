@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h3>設定</h3>
+  <form action="/ui/settings/save" method="post">
+    <div class="three-col">
+      <label>既定年度
+        <input type="text" name="default_year" value="{{ settings.default_year or '' }}">
+      </label>
+      <label>既定計算方式
+        <select name="default_method">
+          <option value="total_average" {% if settings.default_method == "total_average" %}selected{% endif %}>総平均法</option>
+          <option value="moving_average" {% if settings.default_method == "moving_average" %}selected{% endif %}>移動平均法</option>
+        </select>
+      </label>
+    </div>
+    <label>
+      <input type="checkbox" name="disclaimer_acknowledged" {% if settings.disclaimer_acknowledged %}checked{% endif %}>
+      本ソフトは申告補助用であり、最終判断は利用者責任であることを理解した
+    </label>
+    <button type="submit">設定を保存</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h3>セキュリティと運用上の注意</h3>
+  <ul class="list">
+    <li>既定で localhost のみへバインドする前提だよ。</li>
+    <li>API key / secret は平文ログへ出さず、ローカル secrets store で扱うよ。</li>
+    <li>CSV import と API sync は元データを上書きしないよ。</li>
+    <li>API が不完全でも CSV only モードで継続できる設計だよ。</li>
+  </ul>
+</section>
+{% endblock %}

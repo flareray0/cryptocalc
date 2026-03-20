@@ -1,0 +1,2 @@
+timestamp_utc,tx_type,asset,quantity,price_per_unit_jpy,gross_amount_jpy,side,note
+2024-12-31 00:00:00,opening_balance,BTC,0.002,10000000,20000,buy,opening position
