@@ -78,11 +78,53 @@ class BinanceJapanApiClient(ExchangeClientBase):
         query = urlencode(params, doseq=True)
         signature = hmac.new(self.api_secret, query.encode("utf-8"), hashlib.sha256).hexdigest()
         response = self.client.get(f"{path}?{query}&signature={signature}")
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise ValueError(self._format_http_error(exc, path, params)) from exc
         return response.json()
 
     def _timestamp(self) -> int:
         return int(time.time() * 1000)
+
+    def _format_http_error(self, exc: httpx.HTTPStatusError, path: str, params: dict) -> str:
+        response = exc.response
+        status_code = response.status_code
+        detail = ""
+        try:
+            payload = response.json()
+            code = payload.get("code")
+            message = payload.get("msg") or payload.get("message") or payload
+            detail = f" code={code} msg={message}" if code is not None else f" msg={message}"
+        except Exception:
+            text = (response.text or "").strip()
+            if text:
+                detail = f" body={text}"
+
+        if status_code == 401:
+            symbol = params.get("symbol")
+            symbol_note = f" symbol={symbol}." if symbol else ""
+            return (
+                "Binance API 認証エラー (401 Unauthorized)。"
+                f"{symbol_note} "
+                f"base_url={self.base_url}, api_key={self._mask_key(self.api_key)}."
+                " 保存済みキーが古い可能性があります。API連携画面でキーを入力し直すか、"
+                "いったん接続解除して再保存してください。"
+                " あわせて Binance 側で Read 権限と IP 制限の許可先を確認してください。"
+                f"{detail}"
+            )
+
+        return (
+            f"Binance API エラー ({status_code})。path={path}, "
+            f"base_url={self.base_url}, api_key={self._mask_key(self.api_key)}.{detail}"
+        )
+
+    def _mask_key(self, api_key: str | None) -> str:
+        if not api_key:
+            return "(none)"
+        if len(api_key) <= 8:
+            return "*" * len(api_key)
+        return f"{api_key[:4]}...{api_key[-4:]}"
 
     def _trade_to_tx(
         self,
