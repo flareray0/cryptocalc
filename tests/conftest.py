@@ -10,7 +10,14 @@ from app.storage.settings import get_paths, load_settings, save_settings
 @pytest.fixture(autouse=True)
 def clean_app_state():
     paths = get_paths()
-    for path in (paths.imports, paths.calc_runs, paths.logs, paths.exports, paths.app_data / "analysis_runs"):
+    for path in (
+        paths.imports,
+        paths.calc_runs,
+        paths.logs,
+        paths.exports,
+        paths.app_data / "analysis_runs",
+        paths.app_data / "calc_window_runs",
+    ):
         if path.exists():
             shutil.rmtree(path)
         path.mkdir(parents=True, exist_ok=True)
@@ -23,5 +30,11 @@ def clean_app_state():
     settings = load_settings()
     settings["manual_rate_file"] = None
     settings["disclaimer_acknowledged"] = False
+    settings["binance_japan_api"]["enabled"] = False
+    settings["binance_japan_api"]["default_symbols"] = ""
+    settings["binance_japan_api"]["default_start_time_ms"] = None
+    settings["binance_japan_api"]["default_end_time_ms"] = None
+    settings["calc_window"]["default_start_year"] = None
+    settings["calc_window"]["default_end_year"] = None
     save_settings(settings)
     yield

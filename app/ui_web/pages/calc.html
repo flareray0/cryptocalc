@@ -22,6 +22,38 @@
   </form>
 </section>
 
+<section class="panel">
+  <h3>期間集計 / 年跨ぎ集計</h3>
+  <p class="muted">既存の単年計算はそのままに、開始年〜終了年の合算や全期間集計を横に追加したよ。</p>
+  <form action="/ui/calc/run-window" method="post">
+    <div class="three-col">
+      <label>開始年
+        <select name="start_year">
+          <option value="">最初の年から</option>
+          {% for year in available_years|reverse %}
+          <option value="{{ year }}" {% if selected_start_year == year %}selected{% endif %}>{{ year }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>終了年
+        <select name="end_year">
+          <option value="">最後の年まで</option>
+          {% for year in available_years|reverse %}
+          <option value="{{ year }}" {% if selected_end_year == year %}selected{% endif %}>{{ year }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>計算方式
+        <select name="method">
+          <option value="total_average" {% if (selected_method or settings.default_method) == "total_average" %}selected{% endif %}>総平均法</option>
+          <option value="moving_average" {% if (selected_method or settings.default_method) == "moving_average" %}selected{% endif %}>移動平均法</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit">期間集計を実行</button>
+  </form>
+</section>
+
 {% if run_data %}
 <section class="summary-grid">
   <article>
@@ -74,6 +106,103 @@
 {% else %}
 <section class="panel">
   <p class="muted">まだ計算結果がありません。年度と方式を選んで実行してね。</p>
+</section>
+{% endif %}
+
+{% if window_run_data %}
+<section class="summary-grid">
+  <article>
+    <h3>期間</h3>
+    <div class="big">{{ window_run_data.aggregate_summary.start_year }} - {{ window_run_data.aggregate_summary.end_year }}</div>
+  </article>
+  <article>
+    <h3>方式</h3>
+    <div class="big">{{ window_run_data.method }}</div>
+  </article>
+  <article>
+    <h3>合算実現損益</h3>
+    <div class="big">{{ window_run_data.aggregate_summary.realized_pnl_jpy }}</div>
+  </article>
+  <article>
+    <h3>雑所得候補</h3>
+    <div class="big">{{ window_run_data.aggregate_summary.misc_income_candidate_jpy }}</div>
+  </article>
+  <article>
+    <h3>期間内取引件数</h3>
+    <div class="big">{{ window_run_data.aggregate_summary.scope_transaction_count }}</div>
+  </article>
+  <article>
+    <h3>読込済み総取引件数</h3>
+    <div class="big">{{ window_run_data.aggregate_summary.source_transaction_count }}</div>
+  </article>
+</section>
+
+<section class="panel">
+  <h3>年別サマリ</h3>
+  <div class="table-card">
+    <table>
+      <thead>
+        <tr>
+          <th>年</th>
+          <th>収入金額相当</th>
+          <th>必要経費相当</th>
+          <th>実現損益</th>
+          <th>報酬</th>
+          <th>手数料</th>
+          <th>要確認</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in window_run_data.yearly_rows %}
+        <tr>
+          <td>{{ row.year }}</td>
+          <td>{{ row.income_amount_jpy }}</td>
+          <td>{{ row.necessary_expenses_jpy }}</td>
+          <td>{{ row.realized_pnl_jpy }}</td>
+          <td>{{ row.reward_income_jpy }}</td>
+          <td>{{ row.fee_jpy_total }}</td>
+          <td>{{ row.review_required_count }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h3>期間銘柄別サマリ</h3>
+  <div class="table-card">
+    <table>
+      <thead>
+        <tr>
+          <th>asset</th>
+          <th>期首数量</th>
+          <th>取得数量</th>
+          <th>売却数量</th>
+          <th>期末数量</th>
+          <th>平均取得単価</th>
+          <th>実現損益</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in window_run_data.asset_summaries %}
+        <tr>
+          <td>{{ row.asset }}</td>
+          <td>{{ row.opening_quantity }}</td>
+          <td>{{ row.acquired_quantity }}</td>
+          <td>{{ row.disposed_quantity }}</td>
+          <td>{{ row.ending_quantity }}</td>
+          <td>{{ row.average_cost_per_unit_jpy }}</td>
+          <td>{{ row.realized_pnl_jpy }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% else %}
+<section class="panel">
+  <p class="muted">期間集計はまだ無いよ。開始年/終了年を選んで実行すると、年跨ぎや全期間の合算が見られるよ。</p>
 </section>
 {% endif %}
 {% endblock %}

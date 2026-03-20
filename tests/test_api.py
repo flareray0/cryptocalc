@@ -46,6 +46,22 @@ def test_api_import_calc_and_report():
     assert response.status_code == 200
     assert response.json()["year"] == 2025
 
+    response = client.post(
+        "/api/v1/calc/run-window",
+        json={"start_year": 2024, "end_year": 2025, "method": "moving_average"},
+    )
+    assert response.status_code == 200
+    assert response.json()["aggregate_summary"]["realized_pnl_jpy"] == 21500
+    assert response.json()["aggregate_summary"]["scope_transaction_count"] == 5
+
+    response = client.get(
+        "/api/v1/calc/window-latest",
+        params={"start_year": 2024, "end_year": 2025, "method": "moving_average"},
+    )
+    assert response.status_code == 200
+    assert response.json()["start_year"] == 2024
+    assert response.json()["end_year"] == 2025
+
     response = client.get("/api/v1/transactions/review-required", params={"year": 2025})
     assert response.status_code == 200
     assert response.json()["count"] >= 1

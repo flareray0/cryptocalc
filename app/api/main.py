@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,7 +22,7 @@ from app.services.calc_service import CalcService
 from app.services.exchange_sync_service import ExchangeSyncService
 from app.services.import_service import ImportService
 from app.services.report_service import ReportService
-from app.storage.app_state import load_import_batches, load_sync_status, load_transactions
+from app.storage.app_state import load_import_batches, load_transactions
 from app.storage.json_store import transaction_to_dict
 from app.storage.settings import get_paths, load_settings, save_settings
 from app.ui_web.charts import build_line_chart
@@ -231,10 +232,27 @@ def transactions_page(
 
 
 @app.get("/calc", response_class=HTMLResponse)
-def calc_page(request: Request, year: int | None = None, method: str | None = None):
+def calc_page(
+    request: Request,
+    year: int | None = None,
+    method: str | None = None,
+    start_year: int | None = None,
+    end_year: int | None = None,
+):
     report_service = ReportService()
+    calc_service = CalcService()
+    settings = load_settings()
     selected_method = CalculationMethod(method) if method else None
     latest_run = report_service.latest_run(method=selected_method, year=year)
+    selected_start_year = (
+        start_year if start_year is not None else settings["calc_window"].get("default_start_year")
+    )
+    selected_end_year = end_year if end_year is not None else settings["calc_window"].get("default_end_year")
+    latest_window_run = calc_service.latest_window_run(
+        method=selected_method,
+        start_year=selected_start_year,
+        end_year=selected_end_year,
+    )
     return templates.TemplateResponse(
         request,
         "calc.html",
@@ -244,6 +262,9 @@ def calc_page(request: Request, year: int | None = None, method: str | None = No
             run_data=latest_run,
             selected_year=year,
             selected_method=method,
+            window_run_data=latest_window_run,
+            selected_start_year=selected_start_year,
+            selected_end_year=selected_end_year,
         ),
     )
 
@@ -425,6 +446,37 @@ def ui_calc_run(
     return RedirectResponse(f"/calc?year={year}&method={method}&message=計算を実行しました", status_code=303)
 
 
+@app.post("/ui/calc/run-window")
+def ui_calc_run_window(
+    start_year: str = Form(default=""),
+    end_year: str = Form(default=""),
+    method: str = Form(...),
+):
+    service = CalcService()
+    parsed_start_year = int(start_year) if start_year else None
+    parsed_end_year = int(end_year) if end_year else None
+    try:
+        service.run_window(
+            start_year=parsed_start_year,
+            end_year=parsed_end_year,
+            method=CalculationMethod(method),
+        )
+    except Exception as exc:
+        params = {"method": method, "error": str(exc)}
+        if parsed_start_year is not None:
+            params["start_year"] = parsed_start_year
+        if parsed_end_year is not None:
+            params["end_year"] = parsed_end_year
+        return RedirectResponse(f"/calc?{urlencode(params)}", status_code=303)
+
+    params = {"method": method, "message": "期間集計を実行しました"}
+    if parsed_start_year is not None:
+        params["start_year"] = parsed_start_year
+    if parsed_end_year is not None:
+        params["end_year"] = parsed_end_year
+    return RedirectResponse(f"/calc?{urlencode(params)}", status_code=303)
+
+
 @app.post("/ui/analysis/run")
 def ui_analysis_run(
     year: int = Form(...),
@@ -446,8 +498,8 @@ def ui_analysis_run(
 
 @app.post("/ui/integrations/connect")
 def ui_connect_binance_japan(
-    api_key: str = Form(...),
-    api_secret: str = Form(...),
+    api_key: str = Form(default=""),
+    api_secret: str = Form(default=""),
     base_url: str = Form(default=""),
 ):
     service = ExchangeSyncService()

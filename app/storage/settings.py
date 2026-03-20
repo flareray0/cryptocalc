@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -50,6 +51,16 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 }
 
 
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = deepcopy(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
 def get_paths() -> AppPaths:
     root = project_root()
     storage_root = root / "app" / "storage"
@@ -82,17 +93,14 @@ def load_settings() -> dict[str, Any]:
     path = settings_path()
     if not path.exists():
         save_settings(DEFAULT_SETTINGS)
-        return DEFAULT_SETTINGS.copy()
+        return deepcopy(DEFAULT_SETTINGS)
     with path.open("r", encoding="utf-8") as fh:
         data = json.load(fh)
-    merged = DEFAULT_SETTINGS.copy()
-    merged.update(data)
-    return merged
+    return _deep_merge(DEFAULT_SETTINGS, data)
 
 
 def save_settings(settings: dict[str, Any]) -> None:
     path = settings_path()
-    merged = DEFAULT_SETTINGS.copy()
-    merged.update(settings)
+    merged = _deep_merge(DEFAULT_SETTINGS, settings)
     with path.open("w", encoding="utf-8") as fh:
         json.dump(merged, fh, ensure_ascii=False, indent=2)
