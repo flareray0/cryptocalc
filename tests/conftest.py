@@ -17,6 +17,7 @@ def clean_app_state():
         paths.exports,
         paths.app_data / "analysis_runs",
         paths.app_data / "calc_window_runs",
+        paths.app_data / "analysis_window_runs",
     ):
         if path.exists():
             shutil.rmtree(path)
@@ -36,5 +37,7 @@ def clean_app_state():
     settings["binance_japan_api"]["default_end_time_ms"] = None
     settings["calc_window"]["default_start_year"] = None
     settings["calc_window"]["default_end_year"] = None
+    settings["analysis_window"]["default_start_year"] = None
+    settings["analysis_window"]["default_end_year"] = None
     save_settings(settings)
     yield

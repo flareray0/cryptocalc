@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.schemas import AnalysisRunRequest
+from app.api.schemas import AnalysisRunRequest, AnalysisWindowRunRequest
 from app.domain.enums import CalculationMethod
 from app.services.analysis_service import AnalysisService
 
@@ -22,11 +22,36 @@ def run_analysis(request: AnalysisRunRequest):
     )
 
 
+@router.post("/analysis/run-window")
+def run_analysis_window(request: AnalysisWindowRunRequest):
+    return AnalysisService().run_window(
+        start_year=request.start_year,
+        end_year=request.end_year,
+        method_reference=CalculationMethod(request.method_reference),
+    )
+
+
 @router.get("/analysis/latest")
 def latest_analysis(year: int | None = None, method_reference: str | None = None):
     data = AnalysisService().latest_run(year=year, method_reference=_method_or_none(method_reference))
     if not data:
         raise ValueError("先に分析を実行してください")
+    return data
+
+
+@router.get("/analysis/window-latest")
+def latest_analysis_window(
+    start_year: int | None = None,
+    end_year: int | None = None,
+    method_reference: str | None = None,
+):
+    data = AnalysisService().latest_window_run(
+        start_year=start_year,
+        end_year=end_year,
+        method_reference=_method_or_none(method_reference),
+    )
+    if not data:
+        raise ValueError("先に期間分析を実行してください")
     return data
 
 
@@ -63,3 +88,16 @@ def edge_report(year: int | None = None, method_reference: str | None = None):
 @router.get("/analysis/export")
 def export_analysis(year: int | None = None, method_reference: str | None = None):
     return AnalysisService().export_analysis(year=year, method_reference=_method_or_none(method_reference))
+
+
+@router.get("/analysis/window-export")
+def export_analysis_window(
+    start_year: int | None = None,
+    end_year: int | None = None,
+    method_reference: str | None = None,
+):
+    return AnalysisService().export_analysis(
+        start_year=start_year,
+        end_year=end_year,
+        method_reference=_method_or_none(method_reference),
+    )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from collections import defaultdict
 from copy import deepcopy
 from datetime import datetime
@@ -679,22 +680,21 @@ def _build_attribution_rows(
     return rows
 
 
-def run_portfolio_analysis(
+def _execute_portfolio_analysis(
+    *,
     transactions: list,
-    year: int,
+    period_start: datetime,
+    period_end: datetime,
     method_reference: CalculationMethod,
     manual_rate_table,
-) -> AnalysisRunResult:
+):
     history = _build_price_history(transactions, manual_rate_table)
     ordered = sort_transactions(transactions)
     review_notes: set[str] = set()
     actual_state = AnalysisState()
 
-    year_start = datetime(year, 1, 1, tzinfo=JST)
-    year_end = datetime(year, 12, 31, 23, 59, 59, tzinfo=JST)
-
     for tx in ordered:
-        if tx.timestamp_jst and tx.timestamp_jst >= year_start:
+        if tx.timestamp_jst and tx.timestamp_jst >= period_start:
             break
         _apply_transaction(actual_state, tx, history)
 
@@ -704,7 +704,7 @@ def run_portfolio_analysis(
 
     portfolio_snapshots: list[PortfolioSnapshot] = [
         _make_snapshot(
-            timestamp=year_start,
+            timestamp=period_start,
             actual_state=actual_state,
             benchmark_state=benchmark_state,
             history=history,
@@ -712,14 +712,14 @@ def run_portfolio_analysis(
         )
     ]
     asset_quantity_history: list[AssetQuantitySnapshot] = _make_asset_quantity_snapshots(
-        year_start,
+        period_start,
         actual_state.balances,
         history,
         review_notes,
     )
 
     for tx in ordered:
-        if tx.timestamp_jst is None or tx.timestamp_jst < year_start or tx.timestamp_jst > year_end:
+        if tx.timestamp_jst is None or tx.timestamp_jst < period_start or tx.timestamp_jst > period_end:
             continue
         _apply_transaction(actual_state, tx, history)
         if tx.tx_type in {
@@ -742,10 +742,10 @@ def run_portfolio_analysis(
             _make_asset_quantity_snapshots(tx.timestamp_jst, actual_state.balances, history, review_notes)
         )
 
-    if portfolio_snapshots[-1].timestamp != year_end:
+    if portfolio_snapshots[-1].timestamp != period_end:
         portfolio_snapshots.append(
             _make_snapshot(
-                timestamp=year_end,
+                timestamp=period_end,
                 actual_state=actual_state,
                 benchmark_state=benchmark_state,
                 history=history,
@@ -753,7 +753,7 @@ def run_portfolio_analysis(
             )
         )
         asset_quantity_history.extend(
-            _make_asset_quantity_snapshots(year_end, actual_state.balances, history, review_notes)
+            _make_asset_quantity_snapshots(period_end, actual_state.balances, history, review_notes)
         )
 
     benchmark_snapshots = [
@@ -767,7 +767,7 @@ def run_portfolio_analysis(
         for row in portfolio_snapshots
     ]
     pnl_attribution_snapshots = _build_attribution_rows(portfolio_snapshots, history, review_notes)
-    final_timestamp = portfolio_snapshots[-1].timestamp if portfolio_snapshots else year_end
+    final_timestamp = portfolio_snapshots[-1].timestamp if portfolio_snapshots else period_end
     asset_summary_table = _build_asset_summary_table(
         asset_quantity_history,
         actual_state,
@@ -794,15 +794,71 @@ def run_portfolio_analysis(
         }
     )
 
+    return {
+        "portfolio_snapshots": portfolio_snapshots,
+        "asset_quantity_history": asset_quantity_history,
+        "benchmark_snapshots": benchmark_snapshots,
+        "pnl_attribution_snapshots": pnl_attribution_snapshots,
+        "asset_summary_table": asset_summary_table,
+        "edge_report": edge_report,
+        "review_notes": sorted(review_notes),
+    }
+
+
+def run_portfolio_analysis(
+    transactions: list,
+    year: int,
+    method_reference: CalculationMethod,
+    manual_rate_table,
+) -> AnalysisRunResult:
+    year_start = datetime(year, 1, 1, tzinfo=JST)
+    year_end = datetime(year, 12, 31, 23, 59, 59, tzinfo=JST)
+    core = _execute_portfolio_analysis(
+        transactions=transactions,
+        period_start=year_start,
+        period_end=year_end,
+        method_reference=method_reference,
+        manual_rate_table=manual_rate_table,
+    )
+
     return AnalysisRunResult(
         run_id=f"analysis_{uuid4().hex[:12]}",
         year=year,
         method_reference=method_reference,
-        portfolio_snapshots=portfolio_snapshots,
-        asset_quantity_history=asset_quantity_history,
-        benchmark_snapshots=benchmark_snapshots,
-        pnl_attribution_snapshots=pnl_attribution_snapshots,
-        asset_summary_table=asset_summary_table,
-        edge_report=edge_report,
-        review_notes=sorted(review_notes),
+        portfolio_snapshots=core["portfolio_snapshots"],
+        asset_quantity_history=core["asset_quantity_history"],
+        benchmark_snapshots=core["benchmark_snapshots"],
+        pnl_attribution_snapshots=core["pnl_attribution_snapshots"],
+        asset_summary_table=core["asset_summary_table"],
+        edge_report=core["edge_report"],
+        review_notes=core["review_notes"],
     )
+
+
+def run_portfolio_analysis_window(
+    transactions: list,
+    start_year: int,
+    end_year: int,
+    method_reference: CalculationMethod,
+    manual_rate_table,
+) -> dict:
+    period_start = datetime(start_year, 1, 1, tzinfo=JST)
+    period_end = datetime(end_year, 12, 31, 23, 59, 59, tzinfo=JST)
+    core = _execute_portfolio_analysis(
+        transactions=transactions,
+        period_start=period_start,
+        period_end=period_end,
+        method_reference=method_reference,
+        manual_rate_table=manual_rate_table,
+    )
+    latest_snapshot = core["portfolio_snapshots"][-1] if core["portfolio_snapshots"] else None
+    return {
+        "run_id": f"analysis_window_{uuid4().hex[:12]}",
+        "scope": "range",
+        "start_year": start_year,
+        "end_year": end_year,
+        "method_reference": method_reference.value,
+        "generated_at": latest_snapshot.timestamp.isoformat() if latest_snapshot and latest_snapshot.timestamp else None,
+        "latest_snapshot": serialize_payload(asdict(latest_snapshot)) if latest_snapshot else None,
+        **core,
+    }

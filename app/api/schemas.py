@@ -13,6 +13,12 @@ class AnalysisRunRequest(BaseModel):
     method_reference: str
 
 
+class AnalysisWindowRunRequest(BaseModel):
+    start_year: int | None = Field(default=None, ge=2000, le=2100)
+    end_year: int | None = Field(default=None, ge=2000, le=2100)
+    method_reference: str
+
+
 class BinanceConnectRequest(BaseModel):
     api_key: str | None = None
     api_secret: str | None = None

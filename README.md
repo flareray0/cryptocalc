@@ -29,6 +29,7 @@ Binance Spot API の公式ドキュメント:
 - 総平均法 / 移動平均法での計算
 - 単年計算に加えて、年跨ぎ / 全期間の合算集計
 - 分析レイヤーによる総資産 / benchmark / edge の可視化
+- 単年分析に加えて、年跨ぎ / 全期間の分析
 - 年次サマリ、銘柄別サマリ、監査明細、要確認一覧の表示
 - 国税庁転記補助 CSV / Excel の生成
 - JSON API によるローカル連携
@@ -165,13 +166,16 @@ H:\cryptocalc\
 
 ### Analysis
 - `POST /api/v1/analysis/run`
+- `POST /api/v1/analysis/run-window`
 - `GET /api/v1/analysis/latest`
+- `GET /api/v1/analysis/window-latest`
 - `GET /api/v1/analysis/portfolio-history`
 - `GET /api/v1/analysis/asset-quantities`
 - `GET /api/v1/analysis/benchmark`
 - `GET /api/v1/analysis/pnl-breakdown`
 - `GET /api/v1/analysis/edge-report`
 - `GET /api/v1/analysis/export`
+- `GET /api/v1/analysis/window-export`
 
 ### API Integration
 - `POST /api/v1/integrations/binance-japan/connect`
@@ -235,6 +239,7 @@ H:\cryptocalc\
 
 ### 分析の前提
 - 分析は **税務申告値の置換ではなく補助表示** です
+- 分析画面では単年だけでなく、開始年〜終了年を指定した **期間分析 / 全期間分析** もできます
 - USD 建て分析は `USD` / `USDT` / `USDC` 等の内部レート、または手動レート CSV に依存します
 - `ETH/BTC` のような暗号資産同士交換は、JPY 時価が無ければ手動補完を優先します
 - benchmark は passive hold の比較軸であり、将来の最適戦略を保証するものではありません

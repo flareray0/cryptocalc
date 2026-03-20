@@ -48,6 +48,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "default_start_year": None,
         "default_end_year": None,
     },
+    "analysis_window": {
+        "default_start_year": None,
+        "default_end_year": None,
+    },
 }
 
 

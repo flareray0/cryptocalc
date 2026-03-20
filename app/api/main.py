@@ -125,6 +125,68 @@ def _analysis_summary(analysis_run: dict | None) -> dict | None:
     }
 
 
+def _build_analysis_view_data(analysis_run: dict | None) -> dict:
+    snapshots = analysis_run.get("portfolio_snapshots", []) if analysis_run else []
+    asset_quantity_rows = analysis_run.get("asset_quantity_history", []) if analysis_run else []
+    top_symbols = []
+    if asset_quantity_rows:
+        totals = {}
+        for row in asset_quantity_rows:
+            value = _as_number(row.get("market_value_jpy")) or 0
+            totals[row["symbol"]] = max(value, totals.get(row["symbol"], 0))
+        top_symbols = sorted(totals, key=totals.get, reverse=True)[:5]
+    asset_series_rows = []
+    if top_symbols and analysis_run:
+        by_timestamp = {}
+        for row in asset_quantity_rows:
+            if row["symbol"] not in top_symbols:
+                continue
+            by_timestamp.setdefault(row["timestamp"], {})[row["symbol"]] = row["quantity"]
+        asset_series_rows = [
+            {symbol: by_timestamp[timestamp].get(symbol) for symbol in top_symbols}
+            for timestamp in sorted(by_timestamp)
+        ]
+
+    return {
+        "chart_equity_jpy": _line_chart_from_rows(snapshots, "total_equity_jpy", "総資産 JPY 推移"),
+        "chart_equity_usd": _line_chart_from_rows(
+            snapshots,
+            "total_equity_usd",
+            "総資産 USD 推移",
+            "#0b5cab",
+        ),
+        "chart_benchmark": _multi_line_chart(
+            snapshots,
+            [
+                ("actual", "total_equity_jpy", "#0f766e"),
+                ("benchmark", "benchmark_total_equity_jpy", "#92400e"),
+            ],
+            "actual vs benchmark (JPY)",
+        ),
+        "chart_pnl": _multi_line_chart(
+            snapshots,
+            [
+                ("realized", "realized_pnl_jpy", "#0f766e"),
+                ("unrealized", "unrealized_pnl_jpy", "#0b5cab"),
+                ("fees", "fees_jpy", "#991b1b"),
+            ],
+            "realized / unrealized / fees",
+        ),
+        "chart_asset": _multi_line_chart(
+            asset_series_rows,
+            [
+                (symbol, symbol, color)
+                for symbol, color in zip(
+                    top_symbols,
+                    ["#0f766e", "#0b5cab", "#92400e", "#7c3aed", "#be185d"],
+                    strict=False,
+                )
+            ],
+            "asset quantity history",
+        ),
+    }
+
+
 def _base_context(request: Request, title: str, **extra):
     txs = load_transactions()
     review_count = sum(1 for tx in txs if tx.review_flag)
@@ -270,60 +332,30 @@ def calc_page(
 
 
 @app.get("/analysis", response_class=HTMLResponse)
-def analysis_page(request: Request, year: int | None = None, method_reference: str | None = None):
+def analysis_page(
+    request: Request,
+    year: int | None = None,
+    method_reference: str | None = None,
+    start_year: int | None = None,
+    end_year: int | None = None,
+):
+    settings = load_settings()
     selected_method = CalculationMethod(method_reference) if method_reference else None
-    analysis_run = AnalysisService().latest_run(year=year, method_reference=selected_method)
-    snapshots = analysis_run.get("portfolio_snapshots", []) if analysis_run else []
-    asset_quantity_rows = analysis_run.get("asset_quantity_history", []) if analysis_run else []
-    top_symbols = []
-    if asset_quantity_rows:
-        totals = {}
-        for row in asset_quantity_rows:
-            value = _as_number(row.get("market_value_jpy")) or 0
-            totals[row["symbol"]] = max(value, totals.get(row["symbol"], 0))
-        top_symbols = sorted(totals, key=totals.get, reverse=True)[:5]
-    asset_series_rows = []
-    if top_symbols and analysis_run:
-        by_timestamp = {}
-        for row in asset_quantity_rows:
-            if row["symbol"] not in top_symbols:
-                continue
-            by_timestamp.setdefault(row["timestamp"], {})[row["symbol"]] = row["quantity"]
-        asset_series_rows = [
-            {symbol: by_timestamp[timestamp].get(symbol) for symbol in top_symbols}
-            for timestamp in sorted(by_timestamp)
-        ]
-    chart_equity_jpy = _line_chart_from_rows(snapshots, "total_equity_jpy", "総資産 JPY 推移")
-    chart_equity_usd = _line_chart_from_rows(snapshots, "total_equity_usd", "総資産 USD 推移", "#0b5cab")
-    chart_benchmark = _multi_line_chart(
-        snapshots,
-        [
-            ("actual", "total_equity_jpy", "#0f766e"),
-            ("benchmark", "benchmark_total_equity_jpy", "#92400e"),
-        ],
-        "actual vs benchmark (JPY)",
+    service = AnalysisService()
+    analysis_run = service.latest_run(year=year, method_reference=selected_method)
+    selected_start_year = (
+        start_year if start_year is not None else settings["analysis_window"].get("default_start_year")
     )
-    chart_pnl = _multi_line_chart(
-        snapshots,
-        [
-            ("realized", "realized_pnl_jpy", "#0f766e"),
-            ("unrealized", "unrealized_pnl_jpy", "#0b5cab"),
-            ("fees", "fees_jpy", "#991b1b"),
-        ],
-        "realized / unrealized / fees",
+    selected_end_year = (
+        end_year if end_year is not None else settings["analysis_window"].get("default_end_year")
     )
-    chart_asset = _multi_line_chart(
-        asset_series_rows,
-        [
-            (symbol, symbol, color)
-            for symbol, color in zip(
-                top_symbols,
-                ["#0f766e", "#0b5cab", "#92400e", "#7c3aed", "#be185d"],
-                strict=False,
-            )
-        ],
-        "asset quantity history",
+    analysis_window_run = service.latest_window_run(
+        start_year=selected_start_year,
+        end_year=selected_end_year,
+        method_reference=selected_method,
     )
+    single_view = _build_analysis_view_data(analysis_run)
+    window_view = _build_analysis_view_data(analysis_window_run)
     return templates.TemplateResponse(
         request,
         "analysis.html",
@@ -331,13 +363,21 @@ def analysis_page(request: Request, year: int | None = None, method_reference: s
             request,
             "分析",
             analysis_run=analysis_run,
+            analysis_window_run=analysis_window_run,
             selected_year=year,
             selected_method_reference=method_reference,
-            chart_equity_jpy=chart_equity_jpy,
-            chart_equity_usd=chart_equity_usd,
-            chart_benchmark=chart_benchmark,
-            chart_pnl=chart_pnl,
-            chart_asset=chart_asset,
+            selected_start_year=selected_start_year,
+            selected_end_year=selected_end_year,
+            chart_equity_jpy=single_view["chart_equity_jpy"],
+            chart_equity_usd=single_view["chart_equity_usd"],
+            chart_benchmark=single_view["chart_benchmark"],
+            chart_pnl=single_view["chart_pnl"],
+            chart_asset=single_view["chart_asset"],
+            window_chart_equity_jpy=window_view["chart_equity_jpy"],
+            window_chart_equity_usd=window_view["chart_equity_usd"],
+            window_chart_benchmark=window_view["chart_benchmark"],
+            window_chart_pnl=window_view["chart_pnl"],
+            window_chart_asset=window_view["chart_asset"],
         ),
     )
 
@@ -494,6 +534,37 @@ def ui_analysis_run(
         f"/analysis?year={year}&method_reference={method_reference}&message=分析を実行しました",
         status_code=303,
     )
+
+
+@app.post("/ui/analysis/run-window")
+def ui_analysis_run_window(
+    start_year: str = Form(default=""),
+    end_year: str = Form(default=""),
+    method_reference: str = Form(...),
+):
+    service = AnalysisService()
+    parsed_start_year = int(start_year) if start_year else None
+    parsed_end_year = int(end_year) if end_year else None
+    try:
+        service.run_window(
+            start_year=parsed_start_year,
+            end_year=parsed_end_year,
+            method_reference=CalculationMethod(method_reference),
+        )
+    except Exception as exc:
+        params = {"method_reference": method_reference, "error": str(exc)}
+        if parsed_start_year is not None:
+            params["start_year"] = parsed_start_year
+        if parsed_end_year is not None:
+            params["end_year"] = parsed_end_year
+        return RedirectResponse(f"/analysis?{urlencode(params)}", status_code=303)
+
+    params = {"method_reference": method_reference, "message": "期間分析を実行しました"}
+    if parsed_start_year is not None:
+        params["start_year"] = parsed_start_year
+    if parsed_end_year is not None:
+        params["end_year"] = parsed_end_year
+    return RedirectResponse(f"/analysis?{urlencode(params)}", status_code=303)
 
 
 @app.post("/ui/integrations/connect")

@@ -23,6 +23,38 @@
   <p class="muted">ここで追加するのは分析レイヤーだけで、既存の税務計算結果は変えないよ。</p>
 </section>
 
+<section class="panel">
+  <h3>期間分析 / 年跨ぎ分析</h3>
+  <form action="/ui/analysis/run-window" method="post">
+    <div class="three-col">
+      <label>開始年
+        <select name="start_year">
+          <option value="">最初の年から</option>
+          {% for year in available_years|reverse %}
+          <option value="{{ year }}" {% if selected_start_year == year %}selected{% endif %}>{{ year }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>終了年
+        <select name="end_year">
+          <option value="">最後の年まで</option>
+          {% for year in available_years|reverse %}
+          <option value="{{ year }}" {% if selected_end_year == year %}selected{% endif %}>{{ year }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>参照方式
+        <select name="method_reference">
+          <option value="total_average" {% if (selected_method_reference or settings.default_method) == "total_average" %}selected{% endif %}>総平均法</option>
+          <option value="moving_average" {% if (selected_method_reference or settings.default_method) == "moving_average" %}selected{% endif %}>移動平均法</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit">期間分析を実行</button>
+  </form>
+  <p class="muted">単年分析とは別に、複数年を通した総資産推移やエッジ分析を見られるよ。</p>
+</section>
+
 {% if analysis_run %}
 <section class="summary-grid">
   <article>
@@ -165,6 +197,113 @@
 {% else %}
 <section class="panel">
   <p class="muted">まだ分析結果がないよ。年度と方式を選んで分析を実行してね。</p>
+</section>
+{% endif %}
+
+{% if analysis_window_run %}
+<section class="summary-grid">
+  <article>
+    <h3>期間</h3>
+    <div class="big">{{ analysis_window_run.start_year }} - {{ analysis_window_run.end_year }}</div>
+  </article>
+  <article>
+    <h3>総資産 JPY</h3>
+    <div class="big">{{ analysis_window_run.portfolio_snapshots[-1].total_equity_jpy }}</div>
+  </article>
+  <article>
+    <h3>総資産 USD</h3>
+    <div class="big">{{ analysis_window_run.portfolio_snapshots[-1].total_equity_usd or "未評価" }}</div>
+  </article>
+  <article>
+    <h3>実現損益</h3>
+    <div class="big">{{ analysis_window_run.portfolio_snapshots[-1].realized_pnl_jpy }}</div>
+  </article>
+  <article>
+    <h3>benchmark 比較</h3>
+    <div class="big">{{ analysis_window_run.portfolio_snapshots[-1].edge_vs_benchmark_jpy }}</div>
+  </article>
+  <article>
+    <h3>trading edge</h3>
+    <div class="big">{{ analysis_window_run.portfolio_snapshots[-1].trading_edge_jpy }}</div>
+  </article>
+</section>
+
+<section class="chart-grid">
+  <div class="panel">{{ window_chart_equity_jpy|safe }}</div>
+  <div class="panel">{{ window_chart_equity_usd|safe }}</div>
+  <div class="panel">{{ window_chart_benchmark|safe }}</div>
+  <div class="panel">{{ window_chart_pnl|safe }}</div>
+  <div class="panel full-span">{{ window_chart_asset|safe }}</div>
+</section>
+
+<section class="two-col">
+  <div class="panel">
+    <h3>期間分析の要約</h3>
+    <ul class="list">
+      <li>期間: {{ analysis_window_run.start_year }} - {{ analysis_window_run.end_year }}</li>
+      <li>JPY建て総資産: {{ analysis_window_run.portfolio_snapshots[-1].total_equity_jpy }}</li>
+      <li>USD建て総資産: {{ analysis_window_run.portfolio_snapshots[-1].total_equity_usd or "未評価" }}</li>
+      <li>実現損益: {{ analysis_window_run.portfolio_snapshots[-1].realized_pnl_jpy }}</li>
+      <li>在庫評価変動: {{ analysis_window_run.portfolio_snapshots[-1].inventory_revaluation_jpy }}</li>
+      <li>edge vs benchmark: {{ analysis_window_run.portfolio_snapshots[-1].edge_vs_benchmark_jpy }}</li>
+    </ul>
+  </div>
+  <div class="panel">
+    <h3>期間分析のレビュー注意</h3>
+    <ul class="list">
+      {% for note in analysis_window_run.review_notes %}
+      <li>{{ note }}</li>
+      {% else %}
+      <li>追加の要確認メモはないよ。</li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+
+<section class="panel">
+  <h3>period asset summary table</h3>
+  <div class="table-card">
+    <table>
+      <thead>
+        <tr>
+          <th>symbol</th>
+          <th>current quantity</th>
+          <th>period change</th>
+          <th>avg cost JPY</th>
+          <th>mark JPY</th>
+          <th>mark USD</th>
+          <th>market value JPY</th>
+          <th>market value USD</th>
+          <th>realized JPY</th>
+          <th>unrealized JPY</th>
+          <th>fees JPY</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in analysis_window_run.asset_summary_table %}
+        <tr>
+          <td>{{ row.symbol }}</td>
+          <td>{{ row.current_quantity }}</td>
+          <td>{{ row.period_change_quantity }}</td>
+          <td>{{ row.avg_cost_jpy }}</td>
+          <td>{{ row.mark_price_jpy }}</td>
+          <td>{{ row.mark_price_usd }}</td>
+          <td>{{ row.market_value_jpy }}</td>
+          <td>{{ row.market_value_usd }}</td>
+          <td>{{ row.realized_pnl_jpy }}</td>
+          <td>{{ row.unrealized_pnl_jpy }}</td>
+          <td>{{ row.fees_allocated_jpy }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="11">まだ期間分析対象がないよ。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% else %}
+<section class="panel">
+  <p class="muted">期間分析はまだ無いよ。開始年/終了年を選んで実行すると、年跨ぎや全期間の分析が見られるよ。</p>
 </section>
 {% endif %}
 {% endblock %}
