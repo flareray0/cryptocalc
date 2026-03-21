@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.schemas import AnalysisRunRequest, AnalysisWindowRunRequest
+from app.api.schemas import AnalysisRunRequest, AnalysisWindowRunRequest, BalanceReconciliationRefreshRequest
 from app.domain.enums import CalculationMethod
 from app.services.analysis_service import AnalysisService
+from app.services.balance_reconciliation_service import BalanceReconciliationService
 
 
 router = APIRouter(prefix="/api/v1", tags=["analysis"])
@@ -101,3 +102,28 @@ def export_analysis_window(
         end_year=end_year,
         method_reference=_method_or_none(method_reference),
     )
+
+
+@router.post("/analysis/exchange-balance/refresh")
+def refresh_exchange_balance(request: BalanceReconciliationRefreshRequest):
+    return BalanceReconciliationService().refresh(
+        start_year=request.start_year,
+        end_year=request.end_year,
+        method_reference=_method_or_none(request.method_reference),
+    )
+
+
+@router.get("/analysis/exchange-balance/latest")
+def latest_exchange_balance(
+    start_year: int | None = None,
+    end_year: int | None = None,
+    method_reference: str | None = None,
+):
+    data = BalanceReconciliationService().latest(
+        start_year=start_year,
+        end_year=end_year,
+        method_reference=_method_or_none(method_reference),
+    )
+    if not data:
+        raise ValueError("先に Binance 現在残高照合を実行してください")
+    return data

@@ -19,6 +19,7 @@ def clean_app_state(tmp_path, monkeypatch):
         paths.app_data / "analysis_runs",
         paths.app_data / "calc_window_runs",
         paths.app_data / "analysis_window_runs",
+        paths.app_data / "balance_reconciliation_runs",
     ):
         if path.exists():
             shutil.rmtree(path)

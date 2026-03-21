@@ -20,6 +20,7 @@ from app.api.routes_settings import router as settings_router
 from app.domain.enums import CalculationMethod
 from app.domain.models import NormalizedTransaction
 from app.services.analysis_service import AnalysisService
+from app.services.balance_reconciliation_service import BalanceReconciliationService
 from app.services.calc_service import CalcService
 from app.services.exchange_sync_service import ExchangeSyncService
 from app.services.import_service import ImportService
@@ -131,6 +132,21 @@ def _analysis_summary(analysis_run: dict[str, Any] | None) -> dict[str, Any] | N
     }
 
 
+def _balance_reconciliation_summary(snapshot: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not snapshot:
+        return None
+    return {
+        "as_of": snapshot.get("as_of"),
+        "exchange_total_equity_jpy": snapshot.get("exchange_total_equity_jpy"),
+        "reconstructed_total_equity_jpy": snapshot.get("reconstructed_total_equity_jpy"),
+        "difference_vs_analysis_jpy": snapshot.get("difference_vs_analysis_jpy"),
+        "difference_vs_current_price_reconstruction_jpy": snapshot.get(
+            "difference_vs_current_price_reconstruction_jpy"
+        ),
+        "review_notes": snapshot.get("review_notes", []),
+    }
+
+
 def _build_analysis_view_data(analysis_run: dict[str, Any] | None) -> dict[str, str]:
     snapshots: list[dict[str, Any]] = analysis_run.get("portfolio_snapshots", []) if analysis_run else []
     asset_quantity_rows: list[dict[str, Any]] = analysis_run.get("asset_quantity_history", []) if analysis_run else []
@@ -205,8 +221,10 @@ def _base_context(request: Request, title: str, **extra: Any) -> dict[str, Any]:
     latest_batches = load_import_batches()[-10:]
     report_service = ReportService()
     analysis_service = AnalysisService()
+    balance_service = BalanceReconciliationService()
     latest_run = report_service.latest_run()
     latest_analysis = analysis_service.latest_run()
+    latest_balance_reconciliation = balance_service.latest()
     context = {
         "request": request,
         "title": title,
@@ -220,6 +238,8 @@ def _base_context(request: Request, title: str, **extra: Any) -> dict[str, Any]:
         "latest_run": latest_run,
         "latest_analysis": latest_analysis,
         "latest_analysis_summary": _analysis_summary(latest_analysis),
+        "latest_balance_reconciliation": latest_balance_reconciliation,
+        "latest_balance_reconciliation_summary": _balance_reconciliation_summary(latest_balance_reconciliation),
         "available_years": _available_years(txs),
         "sync_status": ExchangeSyncService().connection_state(),
         "message": request.query_params.get("message"),
@@ -370,6 +390,11 @@ def analysis_page(
         end_year=selected_end_year,
         method_reference=selected_method,
     )
+    balance_reconciliation = BalanceReconciliationService().latest(
+        start_year=selected_start_year,
+        end_year=selected_end_year,
+        method_reference=selected_method,
+    )
     single_view = _build_analysis_view_data(analysis_run)
     window_view = _build_analysis_view_data(analysis_window_run)
     return templates.TemplateResponse(
@@ -380,6 +405,7 @@ def analysis_page(
             "分析",
             analysis_run=analysis_run,
             analysis_window_run=analysis_window_run,
+            balance_reconciliation=balance_reconciliation,
             selected_year=year,
             selected_method_reference=method_reference,
             selected_start_year=selected_start_year,
@@ -590,6 +616,42 @@ def ui_analysis_run_window(
         return RedirectResponse(f"/analysis?{urlencode(params)}", status_code=303)
 
     success_params: dict[str, str] = {"method_reference": method_reference, "message": "期間分析を実行しました"}
+    if parsed_start_year is not None:
+        success_params["start_year"] = str(parsed_start_year)
+    if parsed_end_year is not None:
+        success_params["end_year"] = str(parsed_end_year)
+    return RedirectResponse(f"/analysis?{urlencode(success_params)}", status_code=303)
+
+
+@app.post("/ui/analysis/refresh-exchange-balance")
+def ui_refresh_exchange_balance(
+    start_year: str = Form(default=""),
+    end_year: str = Form(default=""),
+    method_reference: str = Form(default=""),
+):
+    service = BalanceReconciliationService()
+    parsed_start_year = int(start_year) if start_year else None
+    parsed_end_year = int(end_year) if end_year else None
+    parsed_method = CalculationMethod(method_reference) if method_reference else None
+    try:
+        service.refresh(
+            start_year=parsed_start_year,
+            end_year=parsed_end_year,
+            method_reference=parsed_method,
+        )
+    except Exception as exc:
+        error_params: dict[str, str] = {"error": str(exc)}
+        if method_reference:
+            error_params["method_reference"] = method_reference
+        if parsed_start_year is not None:
+            error_params["start_year"] = str(parsed_start_year)
+        if parsed_end_year is not None:
+            error_params["end_year"] = str(parsed_end_year)
+        return RedirectResponse(f"/analysis?{urlencode(error_params)}", status_code=303)
+
+    success_params: dict[str, str] = {"message": "Binance 現在残高を照合しました"}
+    if method_reference:
+        success_params["method_reference"] = method_reference
     if parsed_start_year is not None:
         success_params["start_year"] = str(parsed_start_year)
     if parsed_end_year is not None:

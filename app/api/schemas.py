@@ -19,6 +19,12 @@ class AnalysisWindowRunRequest(BaseModel):
     method_reference: str
 
 
+class BalanceReconciliationRefreshRequest(BaseModel):
+    start_year: int | None = Field(default=None, ge=2000, le=2100)
+    end_year: int | None = Field(default=None, ge=2000, le=2100)
+    method_reference: str | None = None
+
+
 class BinanceConnectRequest(BaseModel):
     api_key: str | None = None
     api_secret: str | None = None

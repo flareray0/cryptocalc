@@ -55,6 +55,39 @@
 </section>
 {% endif %}
 
+{% if latest_balance_reconciliation_summary %}
+<section class="summary-grid">
+  <article>
+    <h3>Binance残高ベース総資産 JPY</h3>
+    <div class="big">{{ latest_balance_reconciliation_summary.exchange_total_equity_jpy }}</div>
+  </article>
+  <article>
+    <h3>履歴再構築との差額</h3>
+    <div class="big">{{ latest_balance_reconciliation_summary.difference_vs_analysis_jpy or "未比較" }}</div>
+  </article>
+  <article>
+    <h3>価格揃え差額</h3>
+    <div class="big">{{ latest_balance_reconciliation_summary.difference_vs_current_price_reconstruction_jpy or "未比較" }}</div>
+  </article>
+  <article>
+    <h3>残高照合時刻</h3>
+    <div class="big">{{ latest_balance_reconciliation_summary.as_of or "未取得" }}</div>
+  </article>
+</section>
+
+<section class="panel">
+  <h3>現在残高照合メモ</h3>
+  <ul class="list">
+    {% for note in latest_balance_reconciliation_summary.review_notes %}
+    <li>{{ note }}</li>
+    {% else %}
+    <li>いまのところ追加メモはないよ。</li>
+    {% endfor %}
+  </ul>
+  <p class="muted"><a href="/analysis">分析画面で Binance 現在残高との照合表を見る</a></p>
+</section>
+{% endif %}
+
 <section class="two-col">
   <div class="panel">
     <h3>年次サマリ概要</h3>

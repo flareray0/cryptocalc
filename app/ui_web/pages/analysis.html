@@ -55,6 +55,39 @@
   <p class="muted">単年分析とは別に、複数年を通した総資産推移やエッジ分析を見られるよ。</p>
 </section>
 
+<section class="panel">
+  <h3>現在残高照合</h3>
+  <form action="/ui/analysis/refresh-exchange-balance" method="post">
+    <div class="three-col">
+      <label>開始年
+        <select name="start_year">
+          <option value="">最新設定を使う</option>
+          {% for year in available_years|reverse %}
+          <option value="{{ year }}" {% if selected_start_year == year %}selected{% endif %}>{{ year }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>終了年
+        <select name="end_year">
+          <option value="">最新設定を使う</option>
+          {% for year in available_years|reverse %}
+          <option value="{{ year }}" {% if selected_end_year == year %}selected{% endif %}>{{ year }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>参照方式
+        <select name="method_reference">
+          <option value="">最新設定を使う</option>
+          <option value="total_average" {% if (selected_method_reference or settings.default_method) == "total_average" %}selected{% endif %}>総平均法</option>
+          <option value="moving_average" {% if (selected_method_reference or settings.default_method) == "moving_average" %}selected{% endif %}>移動平均法</option>
+        </select>
+      </label>
+    </div>
+    <button type="submit">Binance 現在残高を照合</button>
+  </form>
+  <p class="muted">Binance API の現在残高を取得して、いま見ている分析結果の再構築残高と差分を並べて見るよ。税務計算そのものは変えないよ。</p>
+</section>
+
 {% if analysis_run %}
 <section class="summary-grid">
   <article>
@@ -304,6 +337,89 @@
 {% else %}
 <section class="panel">
   <p class="muted">期間分析はまだ無いよ。開始年/終了年を選んで実行すると、年跨ぎや全期間の分析が見られるよ。</p>
+</section>
+{% endif %}
+
+{% if balance_reconciliation %}
+<section class="summary-grid">
+  <article>
+    <h3>Binance残高ベース総資産 JPY</h3>
+    <div class="big">{{ balance_reconciliation.exchange_total_equity_jpy }}</div>
+  </article>
+  <article>
+    <h3>履歴再構築総資産 JPY</h3>
+    <div class="big">{{ balance_reconciliation.reconstructed_total_equity_jpy or "未比較" }}</div>
+  </article>
+  <article>
+    <h3>差額 JPY</h3>
+    <div class="big">{{ balance_reconciliation.difference_vs_analysis_jpy or "未比較" }}</div>
+  </article>
+  <article>
+    <h3>価格揃え差額</h3>
+    <div class="big">{{ balance_reconciliation.difference_vs_current_price_reconstruction_jpy or "未比較" }}</div>
+  </article>
+  <article>
+    <h3>取得時刻</h3>
+    <div class="big">{{ balance_reconciliation.as_of }}</div>
+  </article>
+</section>
+
+<section class="two-col">
+  <div class="panel">
+    <h3>照合メモ</h3>
+    <ul class="list">
+      {% for note in balance_reconciliation.review_notes %}
+      <li>{{ note }}</li>
+      {% else %}
+      <li>いまのところ追加メモはないよ。</li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div class="panel">
+    <h3>照合の見方</h3>
+    <ul class="list">
+      <li>Binance残高ベース総資産: 現在の API 残高 × 現在の公開 JPY 価格</li>
+      <li>履歴再構築総資産: 既存の分析レイヤーが再構築した総資産</li>
+      <li>差額 JPY: Binance 現在残高と分析結果のズレ</li>
+      <li>価格揃え差額: 同じ現在価格で評価した時の数量差ベースのズレ</li>
+    </ul>
+  </div>
+</section>
+
+<section class="panel">
+  <h3>現在残高照合テーブル</h3>
+  <div class="table-card">
+    <table>
+      <thead>
+        <tr>
+          <th>symbol</th>
+          <th>exchange quantity</th>
+          <th>reconstructed quantity</th>
+          <th>diff quantity</th>
+          <th>mark JPY</th>
+          <th>exchange value JPY</th>
+          <th>reconstructed value JPY</th>
+          <th>diff value JPY</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in balance_reconciliation.balance_rows %}
+        <tr>
+          <td>{{ row.symbol }}</td>
+          <td>{{ row.exchange_quantity }}</td>
+          <td>{{ row.reconstructed_quantity }}</td>
+          <td>{{ row.diff_quantity }}</td>
+          <td>{{ row.mark_price_jpy or "未取得" }}</td>
+          <td>{{ row.exchange_value_jpy or "未評価" }}</td>
+          <td>{{ row.reconstructed_value_jpy or "未評価" }}</td>
+          <td>{{ row.diff_value_jpy or "未評価" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8">まだ残高照合結果がないよ。</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 {% endif %}
 {% endblock %}
