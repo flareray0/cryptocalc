@@ -339,7 +339,7 @@ python -m pytest -q
 ```
 
 現在のローカル確認:
-- `13 passed`
+- `29 passed`
 - 実 Binance Japan XLSX sample の parser 読込確認済み
 
 ## ロールバック

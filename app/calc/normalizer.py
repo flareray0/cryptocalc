@@ -11,11 +11,18 @@ from app.domain.enums import ClassificationStatus
 from app.domain.models import NormalizedTransaction
 
 
+def _sortable_timestamp(tx: NormalizedTransaction) -> str:
+    timestamp = tx.timestamp_utc or tx.timestamp_jst
+    if isinstance(timestamp, datetime):
+        return timestamp.isoformat()
+    return ""
+
+
 def sort_transactions(transactions: Iterable[NormalizedTransaction]) -> list[NormalizedTransaction]:
     return sorted(
         transactions,
         key=lambda tx: (
-            tx.timestamp_utc or tx.timestamp_jst or "",
+            _sortable_timestamp(tx),
             tx.source_file,
             tx.raw_row_number,
             tx.id,

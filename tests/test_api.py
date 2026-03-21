@@ -69,3 +69,21 @@ def test_api_import_calc_and_report():
     response = client.post("/api/v1/import/reset")
     assert response.status_code == 200
     assert response.json()["ok"] is True
+
+
+def test_api_import_invalid_csv_is_review_required_not_500(tmp_path):
+    client = TestClient(app)
+    bad = tmp_path / "bad.csv"
+    bad.write_text("foo,bar\n1,2\n", encoding="utf-8")
+
+    with bad.open("rb") as fh:
+        response = client.post(
+            "/api/v1/import/csv",
+            files={"file": ("bad.csv", fh, "text/csv")},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["transaction_count"] == 1
+    assert payload["review_required_count"] == 1
+    assert sorted(payload["unknown_column_names"]) == ["bar", "foo"]
