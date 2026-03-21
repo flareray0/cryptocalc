@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, File, Form, Request, UploadFile

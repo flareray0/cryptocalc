@@ -4,8 +4,6 @@ import base64
 import ctypes
 import json
 from ctypes import wintypes
-from pathlib import Path
-
 from app.storage.settings import get_paths
 
 
@@ -93,4 +91,3 @@ class SecretsStore:
     def delete(self) -> None:
         if self.path.exists():
             self.path.unlink()
-
