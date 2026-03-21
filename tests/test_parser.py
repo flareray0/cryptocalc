@@ -168,3 +168,66 @@ def test_binance_japan_parser_reads_trade_export_xlsx(tmp_path):
     assert batch.transaction_count == 1
     assert batch.transactions[0].tx_type.value == "buy"
     assert batch.transactions[0].gross_amount_jpy == Decimal("10000")
+
+
+def test_binance_japan_parser_reads_spot_trade_history_csv(tmp_path):
+    sample = tmp_path / "binance_spot_trade_history.csv"
+    sample.write_text(
+        "\n".join(
+            [
+                "時間,ペア,サイド,価格,実行済み,金額,手数料",
+                "26-03-20 23:39:35,BTCJPY,BUY,10000000,0.001BTC,10000JPY,10JPY",
+                "26-03-20 23:31:58,SOLETH,SELL,0.04181,0.169SOL,0.00706589ETH,0.00000565ETH",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    batch = BinanceJapanParser().parse(sample)
+
+    assert batch.detected_layout == "csv_spot_trade_history"
+    assert batch.transaction_count == 2
+    assert batch.unknown_column_names == []
+    assert batch.transactions[0].tx_type.value == "buy"
+    assert batch.transactions[0].gross_amount_jpy == Decimal("10000")
+    assert batch.transactions[0].fee_jpy == Decimal("10")
+    assert batch.transactions[1].tx_type.value == "crypto_swap"
+    assert batch.transactions[1].base_asset == "SOL"
+    assert batch.transactions[1].quote_asset == "ETH"
+    assert batch.transactions[1].review_flag is True
+
+
+def test_binance_japan_parser_reads_empty_deposit_and_withdraw_history_csv(tmp_path):
+    deposit = tmp_path / "binance_deposit_history.csv"
+    deposit.write_text(
+        "\n".join(
+            [
+                "時間,コイン,ネットワーク,金額,住所,トランザクションID,ステータス",
+                "条件に一致するデータがありません。",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    withdraw = tmp_path / "binance_withdraw_history.csv"
+    withdraw.write_text(
+        "\n".join(
+            [
+                "時間,コイン,ネットワーク,金額,手数料,住所,トランザクションID,ステータス",
+                "条件に一致するデータがありません。",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    deposit_batch = BinanceJapanParser().parse(deposit)
+    withdraw_batch = BinanceJapanParser().parse(withdraw)
+
+    assert deposit_batch.detected_layout == "csv_deposit_history"
+    assert deposit_batch.transaction_count == 0
+    assert deposit_batch.review_required_count == 0
+    assert withdraw_batch.detected_layout == "csv_withdraw_history"
+    assert withdraw_batch.transaction_count == 0
+    assert withdraw_batch.review_required_count == 0
