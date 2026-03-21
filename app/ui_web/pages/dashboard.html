@@ -2,8 +2,16 @@
 {% block content %}
 <section class="summary-grid">
   <article>
-    <h3>取引件数</h3>
+    <h3>取引件数 合算</h3>
     <div class="big">{{ transactions_count }}</div>
+  </article>
+  <article>
+    <h3>CSV/XLSX 件数</h3>
+    <div class="big">{{ transactions_count_csv }}</div>
+  </article>
+  <article>
+    <h3>API 件数</h3>
+    <div class="big">{{ transactions_count_api }}</div>
   </article>
   <article>
     <h3>要確認件数</h3>
@@ -18,6 +26,13 @@
     <div class="big">{{ settings.default_method }}</div>
   </article>
 </section>
+
+{% if has_mixed_binance_sources %}
+<section class="panel">
+  <h3>取込ソース混在の注意</h3>
+  <p class="muted">いまは Binance Japan の CSV/XLSX と API が両方入っているよ。CSV/XLSX を正本、API を補助として扱うので、件数の完全一致は前提にしないでね。</p>
+</section>
+{% endif %}
 
 {% if analysis_summary and analysis_summary.latest_snapshot %}
 <section class="summary-grid">

@@ -9,8 +9,13 @@ from app.integrations.rate_input_adapter import ManualRateTable
 from app.parsers.binance_japan_parser import BinanceJapanParser
 from app.parsers.manual_adjustment_parser import ManualAdjustmentParser
 from app.services.audit_service import AuditService
+from app.services.source_reconcile_service import (
+    build_authoritative_binance_windows,
+    prune_existing_api_transactions,
+)
 from app.storage.app_state import (
     append_import_batch,
+    load_import_batches,
     load_transactions,
     save_transactions,
 )
@@ -33,7 +38,23 @@ class ImportService:
             batch=batch,
         )
         merged, duplicate_count = merge_transactions(existing, batch.transactions)
+        import_batches = load_import_batches() + [
+            {
+                "source_file": batch.source_file,
+                "detected_layout": batch.detected_layout,
+            }
+        ]
+        windows = build_authoritative_binance_windows(
+            transactions=merged,
+            import_batches=import_batches,
+        )
+        merged, pruned_existing_api_count = prune_existing_api_transactions(
+            transactions=merged,
+            windows=windows,
+        )
         batch.duplicate_count = duplicate_count + suppressed_api_overlap_count
+        if pruned_existing_api_count:
+            batch.duplicate_count += pruned_existing_api_count
         batch.audit_log_path = str(
             self.audit.write_jsonl(
                 "import_batch",
@@ -46,6 +67,7 @@ class ImportService:
                         "review_required_count": batch.review_required_count,
                         "duplicate_count": batch.duplicate_count,
                         "suppressed_api_overlap_count": suppressed_api_overlap_count,
+                        "pruned_existing_api_count": pruned_existing_api_count,
                         "detected_layout": batch.detected_layout,
                         "header_row_number": batch.header_row_number,
                         "unknown_column_names": batch.unknown_column_names,

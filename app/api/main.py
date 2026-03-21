@@ -190,6 +190,9 @@ def _build_analysis_view_data(analysis_run: dict | None) -> dict:
 def _base_context(request: Request, title: str, **extra):
     txs = load_transactions()
     review_count = sum(1 for tx in txs if tx.review_flag)
+    source_counts: dict[str, int] = {}
+    for tx in txs:
+        source_counts[tx.source_kind.value] = source_counts.get(tx.source_kind.value, 0) + 1
     latest_batches = load_import_batches()[-10:]
     report_service = ReportService()
     analysis_service = AnalysisService()
@@ -200,6 +203,9 @@ def _base_context(request: Request, title: str, **extra):
         "title": title,
         "settings": load_settings(),
         "transactions_count": len(txs),
+        "transactions_count_csv": source_counts.get("csv", 0) + source_counts.get("xlsx", 0),
+        "transactions_count_api": source_counts.get("api", 0),
+        "transactions_count_manual": source_counts.get("manual", 0),
         "review_required_count": review_count,
         "latest_batches": list(reversed(latest_batches)),
         "latest_run": latest_run,
@@ -211,6 +217,7 @@ def _base_context(request: Request, title: str, **extra):
         "error": request.query_params.get("error"),
         "notice_tax": "本ソフトは日本の暗号資産損益計算の補助を目的とするローカル専用ツールです。最終的な税務判断は利用者または税理士等が行ってください。",
         "notice_review": "不明取引・JPY未評価取引・対応付け不能な取引は要確認として残します。",
+        "has_mixed_binance_sources": source_counts.get("api", 0) > 0 and (source_counts.get("csv", 0) + source_counts.get("xlsx", 0)) > 0,
     }
     context.update(extra)
     return context

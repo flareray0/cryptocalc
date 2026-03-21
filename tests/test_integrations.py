@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 import httpx
+from pathlib import Path
+from datetime import datetime, timezone
+from decimal import Decimal
 
+from app.domain.enums import ClassificationStatus, ImportSourceKind, Side, TransactionType
+from app.domain.models import NormalizedTransaction
 from app.integrations.binance_japan_api_client import BinanceJapanApiClient
 from app.services.exchange_sync_service import ExchangeSyncService
+from app.services.import_service import ImportService
 
 
 def test_saved_api_credentials_can_be_reused(monkeypatch):
@@ -182,3 +188,72 @@ def test_api_fill_rows_are_aggregated_by_order_id():
     assert first["quoteQty"] == "201"
     assert first["commission"] == "0.15"
     assert first["price"] == "100.5"
+
+
+def test_sync_skips_api_rows_when_csv_authoritative_window_exists(monkeypatch, tmp_path):
+    csv_path = tmp_path / "jp_balance.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "ユーザーID,時間,アカウント,操作,コイン,変更,備考",
+                "1,25-07-17 20:06:11,Spot,Transaction Buy,ETH,0.0035,",
+                "1,25-07-17 20:06:11,Spot,Transaction Spend,BTC,-0.00009908,",
+            ]
+        ),
+        encoding="utf-8-sig",
+    )
+    ImportService().import_file(Path(csv_path))
+
+    class DummyClient:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def sync_transactions_with_meta(self, **kwargs):
+            return {
+                "transactions": [
+                    NormalizedTransaction(
+                        id="api_trade_overlap",
+                        source_exchange="binance_japan_api",
+                        source_file="api_sync",
+                        raw_row_number=1,
+                        timestamp_jst=datetime(2025, 7, 17, 20, 6, 11, tzinfo=timezone.utc).astimezone(),
+                        timestamp_utc=datetime(2025, 7, 17, 11, 6, 11, tzinfo=timezone.utc),
+                        tx_type=TransactionType.CRYPTO_SWAP,
+                        base_asset="ETH",
+                        quote_asset="BTC",
+                        quantity=Decimal("0.0035"),
+                        quote_quantity=Decimal("0.00009908"),
+                        unit_price_quote=None,
+                        price_per_unit_jpy=None,
+                        gross_amount_jpy=None,
+                        fee_asset=None,
+                        fee_amount=None,
+                        fee_jpy=None,
+                        side=Side.BUY,
+                        note="dummy",
+                        raw_payload={},
+                        classification_status=ClassificationStatus.CLASSIFIED,
+                        review_flag=False,
+                        review_reasons=[],
+                        source_kind=ImportSourceKind.API,
+                        jpy_rate_source=None,
+                    )
+                ],
+                "resolved_symbols": kwargs["symbols"],
+                "warnings": [],
+            }
+
+        def discover_symbols(self):
+            return ["ETHBTC"]
+
+    monkeypatch.setattr(
+        "app.services.exchange_sync_service.BinanceJapanApiClient",
+        DummyClient,
+    )
+
+    service = ExchangeSyncService()
+    service.secrets.save({"api_key": "demo-key", "api_secret": "demo-secret", "base_url": "https://api.binance.com"})
+    result = service.sync(symbols=["ETHBTC"], start_time_ms=None, end_time_ms=None)
+    assert result["synced_count"] == 0
+    assert result["skipped_by_csv_coverage"] >= 1
+    assert any("CSV/XLSX" in item for item in result["warnings"])
