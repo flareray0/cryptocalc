@@ -130,6 +130,8 @@ def import_batch_to_dict(batch: ImportBatchResult) -> dict[str, Any]:
         "unknown_tx_types": batch.unknown_tx_types,
         "transactions": [transaction_to_dict(tx) for tx in batch.transactions],
         "audit_log_path": batch.audit_log_path,
+        "detected_layout": batch.detected_layout,
+        "header_row_number": batch.header_row_number,
     }
 
 

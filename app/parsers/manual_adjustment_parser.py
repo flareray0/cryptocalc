@@ -68,4 +68,6 @@ class ManualAdjustmentParser(BaseParser):
             unknown_column_names=[],
             unknown_tx_types=[],
             transactions=transactions,
+            detected_layout="manual_adjustment_csv",
+            header_row_number=1,
         )

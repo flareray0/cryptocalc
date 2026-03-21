@@ -40,6 +40,8 @@ class ImportService:
                         "transaction_count": batch.transaction_count,
                         "review_required_count": batch.review_required_count,
                         "duplicate_count": duplicate_count,
+                        "detected_layout": batch.detected_layout,
+                        "header_row_number": batch.header_row_number,
                         "unknown_column_names": batch.unknown_column_names,
                         "unknown_tx_types": batch.unknown_tx_types,
                     }
@@ -69,6 +71,7 @@ class ImportService:
     def _copy_to_imports(self, source_path: Path) -> Path:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         target = self.paths.imports / f"{stamp}_{source_path.name}"
+        target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(source_path.read_bytes())
         return target
 

@@ -40,6 +40,8 @@ def import_csv(file: UploadFile = File(...), import_kind: str | None = Query(def
             "transaction_count": batch.transaction_count,
             "review_required_count": batch.review_required_count,
             "duplicate_count": batch.duplicate_count,
+            "detected_layout": batch.detected_layout,
+            "header_row_number": batch.header_row_number,
             "unknown_column_names": batch.unknown_column_names,
             "unknown_tx_types": batch.unknown_tx_types,
             "audit_log_path": batch.audit_log_path,

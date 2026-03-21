@@ -1,8 +1,26 @@
 from __future__ import annotations
 
+from decimal import Decimal
+import re
+from zipfile import ZipFile
 from pathlib import Path
 
+from openpyxl import Workbook
+
 from app.parsers.binance_japan_parser import BinanceJapanParser
+
+
+def _force_sheet_dimension_to_a1(path: Path) -> None:
+    temp_path = path.with_suffix(".tmp.xlsx")
+    with ZipFile(path, "r") as src, ZipFile(temp_path, "w") as dst:
+        for entry in src.infolist():
+            payload = src.read(entry.filename)
+            if entry.filename == "xl/worksheets/sheet1.xml":
+                text = payload.decode("utf-8")
+                text = re.sub(r'<dimension ref="[^"]+"', '<dimension ref="A1"', text, count=1)
+                payload = text.encode("utf-8")
+            dst.writestr(entry, payload)
+    temp_path.replace(path)
 
 
 def test_binance_japan_parser_reads_sample():
@@ -51,3 +69,102 @@ def test_binance_japan_parser_reads_japanese_balance_history(tmp_path):
     assert batch.transactions[2].tx_type.value == "crypto_swap"
     assert batch.transactions[2].base_asset == "ETH"
     assert batch.transactions[2].quote_asset == "BTC"
+
+
+def test_binance_japan_parser_reads_report_style_xlsx_with_offset_header(tmp_path):
+    sample = tmp_path / "binance_jp_report.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Sheet0"
+
+    ws["C3"] = "取引履歴"
+    ws["C5"] = "名前"
+    ws["D5"] = "匿名ユーザー"
+    ws["F5"] = "メール"
+    ws["G5"] = "masked@example.com"
+    ws["C6"] = "ユーザーID"
+    ws["D6"] = "123456"
+    ws["F6"] = "期間(UTC+9)"
+    ws["G6"] = "2026-03-14 to 2026-03-21"
+
+    headers = {
+        "C10": "ユーザーID",
+        "D10": "時間",
+        "F10": "アカウント",
+        "G10": "操作",
+        "I10": "コイン",
+        "J10": "変更",
+        "L10": "備考",
+    }
+    for cell, value in headers.items():
+        ws[cell] = value
+
+    rows = [
+        ("C11", "123456"), ("D11", "26-03-15 18:27:19"), ("F11", "Spot"), ("G11", "Transaction Sold"), ("I11", "BTC"), ("J11", "-0.002285"), ("L11", ""),
+        ("C12", "123456"), ("D12", "26-03-15 18:27:19"), ("F12", "Spot"), ("G12", "Transaction Revenue"), ("I12", "JPY"), ("J12", "26256.950995"), ("L12", ""),
+        ("C13", "123456"), ("D13", "26-03-15 18:27:19"), ("F13", "Spot"), ("G13", "Transaction Fee"), ("I13", "JPY"), ("J13", "-11.5346793"), ("L13", ""),
+        ("C14", "123456"), ("D14", "26-03-16 10:00:00"), ("F14", "Spot"), ("G14", "Deposit"), ("I14", "JPY"), ("J14", "15000"), ("L14", ""),
+    ]
+    for cell, value in rows:
+        ws[cell] = value
+
+    wb.save(sample)
+    _force_sheet_dimension_to_a1(sample)
+
+    parser = BinanceJapanParser()
+    batch = parser.parse(sample)
+
+    assert batch.detected_layout == "xlsx_japanese_balance_history_report"
+    assert batch.header_row_number == 10
+    assert batch.transaction_count == 2
+    assert batch.unknown_column_names == []
+    assert batch.unknown_tx_types == []
+    assert batch.transactions[0].tx_type.value == "sell"
+    assert batch.transactions[0].gross_amount_jpy == Decimal("26256.950995")
+    assert batch.transactions[1].tx_type.value == "transfer_in"
+    assert batch.transactions[1].base_asset == "JPY"
+
+
+def test_binance_japan_parser_reads_trade_export_xlsx(tmp_path):
+    sample = tmp_path / "binance_trade_export.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Sheet0"
+    ws.append(
+        [
+            "Date(UTC)",
+            "Pair",
+            "Base Asset",
+            "Quote Asset",
+            "Type",
+            "Price",
+            "Amount",
+            "Total",
+            "Fee",
+            "Fee Coin",
+        ]
+    )
+    ws.append(
+        [
+            "2025-01-03 00:00:00",
+            "BTCJPY",
+            "BTC",
+            "JPY",
+            "BUY",
+            "10000000",
+            "0.001",
+            "10000",
+            "10",
+            "JPY",
+        ]
+    )
+    wb.save(sample)
+
+    parser = BinanceJapanParser()
+    batch = parser.parse(sample)
+
+    assert batch.detected_layout == "xlsx_trade_export"
+    assert batch.header_row_number == 1
+    assert batch.transaction_count == 1
+    assert batch.transactions[0].tx_type.value == "buy"
+    assert batch.transactions[0].gross_amount_jpy == Decimal("10000")

@@ -4,7 +4,7 @@ import csv
 import hashlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from app.domain.enums import ClassificationStatus, ImportSourceKind, Side, TransactionType
 from app.domain.models import ImportBatchResult, NormalizedTransaction
@@ -33,6 +33,8 @@ EXPECTED_COLUMNS_JP = [
     "変更",
     "備考",
 ]
+
+HEADER_SCAN_MAX_ROWS = 64
 
 IGNORED_INTERNAL_OPERATIONS = {
     "Transfer Between Main and Funding Wallet",
@@ -70,10 +72,20 @@ class BinanceJapanParser(BaseParser):
         return path.suffix.lower() in {".csv", ".xlsx", ".xlsm"}
 
     def parse(self, path: Path) -> ImportBatchResult:
-        rows = list(self._load_rows(path))
+        rows, detected_layout, header_row_number = self._load_rows(path)
         if rows and self._is_japanese_balance_history_schema(rows[0][1]):
-            return self._parse_japanese_balance_history(path, rows)
-        return self._parse_trade_export(path, rows)
+            return self._parse_japanese_balance_history(
+                path,
+                rows,
+                detected_layout=detected_layout,
+                header_row_number=header_row_number,
+            )
+        return self._parse_trade_export(
+            path,
+            rows,
+            detected_layout=detected_layout,
+            header_row_number=header_row_number,
+        )
 
     def _batch_id(self, path: Path) -> str:
         return f"binance_japan_{safe_slug(path.stem)}_{int(path.stat().st_mtime)}"
@@ -81,25 +93,72 @@ class BinanceJapanParser(BaseParser):
     def _source_kind(self, path: Path) -> ImportSourceKind:
         return ImportSourceKind.XLSX if path.suffix.lower() != ".csv" else ImportSourceKind.CSV
 
-    def _load_rows(self, path: Path) -> Iterable[tuple[int, dict[str, Any]]]:
+    def _load_rows(self, path: Path) -> tuple[list[tuple[int, dict[str, Any]]], str | None, int | None]:
         if path.suffix.lower() == ".csv":
+            rows: list[tuple[int, dict[str, Any]]] = []
             with path.open("r", encoding="utf-8-sig", newline="") as fh:
                 reader = csv.DictReader(fh)
                 for idx, row in enumerate(reader, start=2):
-                    yield idx, {k: v for k, v in row.items()}
-            return
+                    rows.append((idx, {k: v for k, v in row.items()}))
+            detected_layout = "csv_japanese_balance_history" if rows and self._is_japanese_balance_history_schema(rows[0][1]) else "csv_trade_export"
+            return rows, detected_layout, 1
 
         from openpyxl import load_workbook
 
-        wb = load_workbook(path, read_only=True, data_only=True)
+        wb = load_workbook(path, read_only=False, data_only=True)
         ws = wb[wb.sheetnames[0]]
-        header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
-        headers = [str(cell).strip() if cell is not None else "" for cell in header_row]
-        for row_number, cells in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-            row = {headers[index]: cells[index] for index in range(len(headers))}
-            yield row_number, row
+        header_row_number, headers, detected_layout = self._detect_xlsx_header(ws)
+        if not headers:
+            return [], "xlsx_unknown_layout", None
 
-    def _parse_trade_export(self, path: Path, rows: list[tuple[int, dict[str, Any]]]) -> ImportBatchResult:
+        active_columns = [(index, header) for index, header in enumerate(headers) if header]
+        rows: list[tuple[int, dict[str, Any]]] = []
+        for row_number, cells in enumerate(ws.iter_rows(min_row=header_row_number + 1, values_only=True), start=header_row_number + 1):
+            if not active_columns:
+                continue
+            if not any(index < len(cells) and cells[index] not in (None, "") for index, _ in active_columns):
+                continue
+            row = {
+                header: cells[index] if index < len(cells) else None
+                for index, header in active_columns
+            }
+            rows.append((row_number, row))
+        return rows, detected_layout, header_row_number
+
+    def _detect_xlsx_header(self, worksheet: Any) -> tuple[int, list[str], str]:
+        fallback_header: list[str] | None = None
+        fallback_row_number: int | None = None
+
+        for row_number, row in enumerate(
+            worksheet.iter_rows(
+                min_row=1,
+                max_row=min(getattr(worksheet, "max_row", HEADER_SCAN_MAX_ROWS), HEADER_SCAN_MAX_ROWS),
+                values_only=True,
+            ),
+            start=1,
+        ):
+            headers = [str(cell).strip() if cell is not None else "" for cell in row]
+            if fallback_header is None and any(headers):
+                fallback_header = headers
+                fallback_row_number = row_number
+            key_set = {header for header in headers if header}
+            if set(EXPECTED_COLUMNS_JP).issubset(key_set):
+                return row_number, headers, "xlsx_japanese_balance_history_report"
+            if set(EXPECTED_COLUMNS).issubset(key_set):
+                return row_number, headers, "xlsx_trade_export"
+
+        if fallback_header is not None and fallback_row_number is not None:
+            return fallback_row_number, fallback_header, "xlsx_unrecognized_header"
+        return 1, [], "xlsx_unknown_layout"
+
+    def _parse_trade_export(
+        self,
+        path: Path,
+        rows: list[tuple[int, dict[str, Any]]],
+        *,
+        detected_layout: str | None = None,
+        header_row_number: int | None = None,
+    ) -> ImportBatchResult:
         transactions: list[NormalizedTransaction] = []
         unknown_columns: set[str] = set()
         unknown_types: set[str] = set()
@@ -121,12 +180,17 @@ class BinanceJapanParser(BaseParser):
             unknown_column_names=sorted(unknown_columns),
             unknown_tx_types=sorted(filter(None, unknown_types)),
             transactions=transactions,
+            detected_layout=detected_layout,
+            header_row_number=header_row_number,
         )
 
     def _parse_japanese_balance_history(
         self,
         path: Path,
         rows: list[tuple[int, dict[str, Any]]],
+        *,
+        detected_layout: str | None = None,
+        header_row_number: int | None = None,
     ) -> ImportBatchResult:
         transactions: list[NormalizedTransaction] = []
         unknown_columns: set[str] = set()
@@ -184,6 +248,8 @@ class BinanceJapanParser(BaseParser):
             unknown_column_names=sorted(unknown_columns),
             unknown_tx_types=sorted(filter(None, unknown_types)),
             transactions=transactions,
+            detected_layout=detected_layout,
+            header_row_number=header_row_number,
         )
 
     def _row_to_trade_tx(self, path: Path, row_number: int, row: dict[str, Any]) -> NormalizedTransaction:

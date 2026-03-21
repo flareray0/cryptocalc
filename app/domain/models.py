@@ -109,6 +109,8 @@ class ImportBatchResult:
     unknown_tx_types: list[str]
     transactions: list[NormalizedTransaction]
     audit_log_path: str | None = None
+    detected_layout: str | None = None
+    header_row_number: int | None = None
 
 
 @dataclass(slots=True)

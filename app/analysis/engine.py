@@ -235,6 +235,19 @@ class AnalysisState:
         self.fees_by_asset: dict[str, Decimal] = defaultdict(lambda: ZERO)
 
 
+def _is_unpriced_review_swap(tx) -> bool:
+    if tx.tx_type is not TransactionType.CRYPTO_SWAP or not tx.review_flag:
+        return False
+    reasons = " ".join(tx.review_reasons or [])
+    return "JPY換算" in reasons or "未確定" in reasons
+
+
+def _analysis_fee_jpy(tx, flow) -> Decimal:
+    if _is_unpriced_review_swap(tx):
+        return tx.fee_jpy or ZERO
+    return flow.fee_jpy or ZERO
+
+
 def _trade_value_jpy(tx, history: PriceHistory) -> Decimal | None:
     timestamp = tx.timestamp_jst
     if tx.tx_type is TransactionType.CRYPTO_SWAP:
@@ -264,7 +277,7 @@ def _apply_transaction(state: AnalysisState, tx, history: PriceHistory) -> None:
     qty = tx.quantity or ZERO
     fee_amount = tx.fee_amount or ZERO
     fee_asset = (tx.fee_asset or "").upper() or None
-    fee_jpy = flow.fee_jpy or ZERO
+    fee_jpy = _analysis_fee_jpy(tx, flow)
     base_asset = (tx.base_asset or "").upper() or None
 
     if tx.tx_type is TransactionType.BUY:
@@ -309,6 +322,7 @@ def _apply_transaction(state: AnalysisState, tx, history: PriceHistory) -> None:
         dispose_asset = (flow.dispose_asset or "").upper() or None
         dispose_qty = tx.quote_quantity if tx.side is Side.BUY else qty
         dispose_qty = dispose_qty or ZERO
+        carry_forward_cost_only = _is_unpriced_review_swap(tx)
 
         _balance_add(state.balances, dispose_asset, -dispose_qty)
         _balance_add(state.balances, acquired_asset, acquired_qty)
@@ -326,14 +340,17 @@ def _apply_transaction(state: AnalysisState, tx, history: PriceHistory) -> None:
             _apply_crypto_fee_inventory(state.cost_positions, fee_asset, fee_amount)
 
         cost_basis = _consume_cost(state.cost_positions, dispose_asset, dispose_qty) or ZERO
-        realized = trade_value_jpy - cost_basis
-        state.realized_pnl_jpy += realized
-        if dispose_asset:
-            state.realized_by_asset[dispose_asset] += realized
+        if carry_forward_cost_only:
+            _acquire_cost(state.cost_positions, acquired_asset, acquired_qty, cost_basis)
+        else:
+            realized = trade_value_jpy - cost_basis
+            state.realized_pnl_jpy += realized
+            if dispose_asset:
+                state.realized_by_asset[dispose_asset] += realized
+            _acquire_cost(state.cost_positions, acquired_asset, acquired_qty, trade_value_jpy)
         if acquired_asset:
             state.fees_by_asset[acquired_asset] += fee_jpy
         state.fees_jpy += fee_jpy
-        _acquire_cost(state.cost_positions, acquired_asset, acquired_qty, trade_value_jpy)
         return
 
     if tx.tx_type is TransactionType.REWARD:
@@ -580,33 +597,45 @@ def _build_asset_summary_table(
     review_notes: set[str],
 ) -> list[dict]:
     first_qty: dict[str, Decimal] = {}
-    latest_qty: dict[str, AssetQuantitySnapshot] = {}
     first_timestamp = min((row.timestamp for row in asset_quantity_history if row.timestamp is not None), default=None)
     for row in asset_quantity_history:
         if first_timestamp is not None and row.timestamp == first_timestamp:
             first_qty[row.symbol] = row.quantity
-        latest_qty[row.symbol] = row
 
     table: list[dict] = []
-    for asset in sorted(latest_qty):
-        latest = latest_qty[asset]
+    assets = {
+        asset
+        for asset, quantity in actual_state.balances.items()
+        if asset not in FIAT_ASSETS and quantity != ZERO
+    }
+    assets.update(asset for asset, value in actual_state.realized_by_asset.items() if value != ZERO)
+    assets.update(asset for asset, value in actual_state.fees_by_asset.items() if value != ZERO)
+
+    for asset in sorted(assets):
+        current_quantity = actual_state.balances.get(asset, ZERO)
+        price_jpy, _ = _market_price_jpy(history, asset, timestamp)
+        market_value_jpy = current_quantity * price_jpy if price_jpy is not None else None
+        market_value_usd = _to_usd(market_value_jpy, history, timestamp, review_notes) if market_value_jpy is not None else None
+        mark_price_usd = None
+        if market_value_usd is not None and current_quantity != ZERO:
+            mark_price_usd = market_value_usd / current_quantity
         position = actual_state.cost_positions.get(asset, {"quantity": ZERO, "cost_total_jpy": ZERO})
         avg_cost = None
         if position["quantity"] > ZERO:
             avg_cost = position["cost_total_jpy"] / position["quantity"]
         unrealized = ZERO
-        if latest.market_value_jpy is not None:
-            unrealized = latest.market_value_jpy - position["cost_total_jpy"]
+        if market_value_jpy is not None:
+            unrealized = market_value_jpy - position["cost_total_jpy"]
         table.append(
             {
                 "symbol": asset,
-                "current_quantity": latest.quantity,
-                "period_change_quantity": latest.quantity - first_qty.get(asset, ZERO),
+                "current_quantity": current_quantity,
+                "period_change_quantity": current_quantity - first_qty.get(asset, ZERO),
                 "avg_cost_jpy": quantize_jpy(avg_cost),
-                "mark_price_jpy": latest.market_price_jpy,
-                "mark_price_usd": latest.market_price_usd,
-                "market_value_jpy": latest.market_value_jpy,
-                "market_value_usd": latest.market_value_usd,
+                "mark_price_jpy": quantize_jpy(price_jpy),
+                "mark_price_usd": quantize_jpy(mark_price_usd),
+                "market_value_jpy": quantize_jpy(market_value_jpy),
+                "market_value_usd": quantize_jpy(market_value_usd),
                 "realized_pnl_jpy": quantize_jpy(actual_state.realized_by_asset.get(asset, ZERO)),
                 "realized_pnl_usd": quantize_jpy(
                     _to_usd(actual_state.realized_by_asset.get(asset, ZERO), history, timestamp, review_notes)

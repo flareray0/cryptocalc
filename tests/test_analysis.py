@@ -6,8 +6,10 @@ from fastapi.testclient import TestClient
 
 from app.api.main import app
 from app.domain.enums import CalculationMethod
+from app.parsers.binance_japan_parser import BinanceJapanParser
 from app.services.analysis_service import AnalysisService
 from app.services.import_service import ImportService
+from app.storage.app_state import save_transactions
 from app.storage.analysis_state import load_latest_analysis_run
 from app.storage.analysis_window_state import load_latest_analysis_window_run
 
@@ -97,3 +99,34 @@ def test_analysis_window_service_and_api():
     )
     assert response.status_code == 200
     assert "期間分析 / 年跨ぎ分析" in response.text
+
+
+def test_analysis_review_swap_uses_cost_carry_forward_not_estimated_realized(tmp_path):
+    sample = tmp_path / "review_swap.csv"
+    sample.write_text(
+        "\n".join(
+            [
+                "ユーザーID,時間,アカウント,操作,コイン,変更,備考",
+                "1,25-07-17 09:18:07,Spot,Deposit,JPY,15000,",
+                "1,25-07-17 09:55:49,Spot,Binance Convert,JPY,-15000,",
+                "1,25-07-17 09:55:49,Spot,Binance Convert,ETH,0.02929314,",
+                "1,25-07-17 10:26:25,Spot,Binance Convert,BTC,0.00082662,",
+                "1,25-07-17 10:26:25,Spot,Binance Convert,ETH,-0.02929314,",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    batch = BinanceJapanParser().parse(sample)
+    save_transactions(batch.transactions)
+
+    result = AnalysisService().run(year=2025, method_reference=CalculationMethod.TOTAL_AVERAGE)
+    latest = result["latest_snapshot"]
+    stored = load_latest_analysis_run(year=2025, method_reference=CalculationMethod.TOTAL_AVERAGE)
+
+    assert latest["realized_pnl_jpy"] == "0.00"
+    assert latest["fees_jpy"] == "0.00"
+    assert stored is not None
+    btc_row = next(row for row in stored["asset_summary_table"] if row["symbol"] == "BTC")
+    assert btc_row["current_quantity"] == "0.00082662"
