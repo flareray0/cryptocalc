@@ -114,6 +114,26 @@
     <h3>trading edge</h3>
     <div class="big">{{ analysis_run.portfolio_snapshots[-1].trading_edge_jpy or "未評価" }}</div>
   </article>
+  <article>
+    <h3>累計入金 JPY</h3>
+    <div class="big">{{ analysis_run.portfolio_snapshots[-1].external_inflows_jpy }}</div>
+  </article>
+  <article>
+    <h3>累計出金 JPY</h3>
+    <div class="big">{{ analysis_run.portfolio_snapshots[-1].external_outflows_jpy }}</div>
+  </article>
+  <article>
+    <h3>純入金 JPY</h3>
+    <div class="big">{{ analysis_run.portfolio_snapshots[-1].net_external_flow_jpy }}</div>
+  </article>
+  <article>
+    <h3>出金してなかったら JPY</h3>
+    <div class="big">{{ analysis_run.portfolio_snapshots[-1].equity_if_no_withdrawals_jpy }}</div>
+  </article>
+  <article>
+    <h3>純入金差引後 JPY</h3>
+    <div class="big">{{ analysis_run.portfolio_snapshots[-1].equity_minus_net_contributions_jpy }}</div>
+  </article>
 </section>
 
 <section class="chart-grid">
@@ -133,6 +153,11 @@
       <li>実現損益: {{ analysis_run.portfolio_snapshots[-1].realized_pnl_jpy }}</li>
       <li>在庫評価変動: {{ analysis_run.portfolio_snapshots[-1].inventory_revaluation_jpy }}</li>
       <li>fees: {{ analysis_run.portfolio_snapshots[-1].fees_jpy }}</li>
+      <li>累計入金: {{ analysis_run.portfolio_snapshots[-1].external_inflows_jpy }}</li>
+      <li>累計出金: {{ analysis_run.portfolio_snapshots[-1].external_outflows_jpy }}</li>
+      <li>純入金: {{ analysis_run.portfolio_snapshots[-1].net_external_flow_jpy }}</li>
+      <li>出金してなかったら: {{ analysis_run.portfolio_snapshots[-1].equity_if_no_withdrawals_jpy }}</li>
+      <li>純入金差引後: {{ analysis_run.portfolio_snapshots[-1].equity_minus_net_contributions_jpy }}</li>
       <li>edge vs benchmark: {{ analysis_run.portfolio_snapshots[-1].edge_vs_benchmark_jpy or "未評価" }}</li>
     </ul>
   </div>
@@ -198,6 +223,9 @@
         <tr>
           <th>period</th>
           <th>delta_v_jpy</th>
+          <th>inflows</th>
+          <th>outflows</th>
+          <th>net flow</th>
           <th>realized</th>
           <th>unrealized</th>
           <th>inventory revaluation</th>
@@ -212,6 +240,9 @@
         <tr>
           <td>{{ row.period_label }}</td>
           <td>{{ row.delta_v_jpy }}</td>
+          <td>{{ row.external_inflows_jpy }}</td>
+          <td>{{ row.external_outflows_jpy }}</td>
+          <td>{{ row.net_external_flow_jpy }}</td>
           <td>{{ row.realized_pnl_jpy }}</td>
           <td>{{ row.unrealized_pnl_jpy }}</td>
           <td>{{ row.inventory_revaluation_jpy }}</td>
@@ -221,7 +252,7 @@
           <td>{{ row.edge_vs_benchmark_jpy }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="9">まだ期間別分析はないよ。</td></tr>
+        <tr><td colspan="12">まだ期間別分析はないよ。</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -259,6 +290,26 @@
     <h3>trading edge</h3>
     <div class="big">{{ analysis_window_run.portfolio_snapshots[-1].trading_edge_jpy or "未評価" }}</div>
   </article>
+  <article>
+    <h3>累計入金 JPY</h3>
+    <div class="big">{{ analysis_window_run.portfolio_snapshots[-1].external_inflows_jpy }}</div>
+  </article>
+  <article>
+    <h3>累計出金 JPY</h3>
+    <div class="big">{{ analysis_window_run.portfolio_snapshots[-1].external_outflows_jpy }}</div>
+  </article>
+  <article>
+    <h3>純入金 JPY</h3>
+    <div class="big">{{ analysis_window_run.portfolio_snapshots[-1].net_external_flow_jpy }}</div>
+  </article>
+  <article>
+    <h3>出金してなかったら JPY</h3>
+    <div class="big">{{ analysis_window_run.portfolio_snapshots[-1].equity_if_no_withdrawals_jpy }}</div>
+  </article>
+  <article>
+    <h3>純入金差引後 JPY</h3>
+    <div class="big">{{ analysis_window_run.portfolio_snapshots[-1].equity_minus_net_contributions_jpy }}</div>
+  </article>
 </section>
 
 <section class="chart-grid">
@@ -278,6 +329,11 @@
       <li>USD建て総資産: {{ analysis_window_run.portfolio_snapshots[-1].total_equity_usd or "未評価" }}</li>
       <li>実現損益: {{ analysis_window_run.portfolio_snapshots[-1].realized_pnl_jpy }}</li>
       <li>在庫評価変動: {{ analysis_window_run.portfolio_snapshots[-1].inventory_revaluation_jpy }}</li>
+      <li>累計入金: {{ analysis_window_run.portfolio_snapshots[-1].external_inflows_jpy }}</li>
+      <li>累計出金: {{ analysis_window_run.portfolio_snapshots[-1].external_outflows_jpy }}</li>
+      <li>純入金: {{ analysis_window_run.portfolio_snapshots[-1].net_external_flow_jpy }}</li>
+      <li>出金してなかったら: {{ analysis_window_run.portfolio_snapshots[-1].equity_if_no_withdrawals_jpy }}</li>
+      <li>純入金差引後: {{ analysis_window_run.portfolio_snapshots[-1].equity_minus_net_contributions_jpy }}</li>
       <li>edge vs benchmark: {{ analysis_window_run.portfolio_snapshots[-1].edge_vs_benchmark_jpy or "未評価" }}</li>
     </ul>
   </div>

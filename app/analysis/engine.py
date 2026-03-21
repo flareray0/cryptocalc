@@ -225,6 +225,8 @@ class AnalysisState:
     def __init__(self) -> None:
         self.balances: dict[str, Decimal] = defaultdict(lambda: ZERO)
         self.cost_positions: dict[str, dict[str, Decimal]] = {}
+        self.external_inflows_jpy = ZERO
+        self.external_outflows_jpy = ZERO
         self.realized_pnl_jpy = ZERO
         self.fees_jpy = ZERO
         self.spread_cost_jpy = ZERO
@@ -233,6 +235,7 @@ class AnalysisState:
         self.reward_income_jpy = ZERO
         self.realized_by_asset: dict[str, Decimal] = defaultdict(lambda: ZERO)
         self.fees_by_asset: dict[str, Decimal] = defaultdict(lambda: ZERO)
+        self.unvalued_external_flow_assets: set[str] = set()
 
 
 def _is_unpriced_review_swap(tx) -> bool:
@@ -270,6 +273,24 @@ def _trade_value_jpy(tx, history: PriceHistory) -> Decimal | None:
                 if price is not None:
                     return price * tx.quote_quantity
     return tx.gross_amount_jpy
+
+
+def _external_flow_value_jpy(tx, flow, history: PriceHistory) -> Decimal | None:
+    if tx.gross_amount_jpy is not None:
+        return tx.gross_amount_jpy
+    if flow.acquire_value_jpy is not None:
+        return flow.acquire_value_jpy
+    if flow.proceeds_jpy is not None:
+        return flow.proceeds_jpy
+    asset = (tx.base_asset or "").upper() or None
+    quantity = tx.quantity or ZERO
+    if asset == "JPY":
+        return quantity
+    if asset and quantity:
+        price_jpy, _ = _market_price_jpy(history, asset, tx.timestamp_jst)
+        if price_jpy is not None:
+            return quantity * price_jpy
+    return None
 
 
 def _apply_transaction(state: AnalysisState, tx, history: PriceHistory) -> None:
@@ -374,6 +395,11 @@ def _apply_transaction(state: AnalysisState, tx, history: PriceHistory) -> None:
 
     if tx.tx_type is TransactionType.TRANSFER_IN:
         _balance_add(state.balances, base_asset, qty)
+        flow_value = _external_flow_value_jpy(tx, flow, history)
+        if flow_value is not None:
+            state.external_inflows_jpy += flow_value
+        elif base_asset:
+            state.unvalued_external_flow_assets.add(base_asset)
         return
 
     if tx.tx_type is TransactionType.OPENING_BALANCE:
@@ -383,6 +409,11 @@ def _apply_transaction(state: AnalysisState, tx, history: PriceHistory) -> None:
 
     if tx.tx_type is TransactionType.TRANSFER_OUT:
         _balance_add(state.balances, base_asset, -qty)
+        flow_value = _external_flow_value_jpy(tx, flow, history)
+        if flow_value is not None:
+            state.external_outflows_jpy += flow_value
+        elif base_asset:
+            state.unvalued_external_flow_assets.add(base_asset)
         if base_asset and base_asset not in FIAT_ASSETS:
             _consume_cost(state.cost_positions, base_asset, qty)
         if fee_asset == base_asset and fee_amount:
@@ -532,6 +563,21 @@ def _make_snapshot(
     )
     total_equity_usd = _to_usd(total_equity_jpy, history, timestamp, review_notes)
     cash_usd = _to_usd(cash_jpy, history, timestamp, review_notes)
+    inflows_usd = _to_usd(actual_state.external_inflows_jpy, history, timestamp, review_notes)
+    outflows_usd = _to_usd(actual_state.external_outflows_jpy, history, timestamp, review_notes)
+    net_external_flow_jpy = actual_state.external_inflows_jpy - actual_state.external_outflows_jpy
+    net_external_flow_usd = None
+    if inflows_usd is not None and outflows_usd is not None:
+        net_external_flow_usd = inflows_usd - outflows_usd
+    equity_if_no_withdrawals_jpy = total_equity_jpy + actual_state.external_outflows_jpy
+    equity_if_no_withdrawals_usd = _to_usd(equity_if_no_withdrawals_jpy, history, timestamp, review_notes)
+    equity_minus_net_contributions_jpy = total_equity_jpy - net_external_flow_jpy
+    equity_minus_net_contributions_usd = _to_usd(
+        equity_minus_net_contributions_jpy,
+        history,
+        timestamp,
+        review_notes,
+    )
     realized_usd = _to_usd(actual_state.realized_pnl_jpy, history, timestamp, review_notes)
     unrealized_usd = _to_usd(unrealized_jpy, history, timestamp, review_notes)
     fees_usd = _to_usd(actual_state.fees_jpy, history, timestamp, review_notes)
@@ -548,12 +594,24 @@ def _make_snapshot(
     trading_edge_usd = None
     if edge_usd is not None and reward_income_usd is not None:
         trading_edge_usd = edge_usd - reward_income_usd
+    for asset in sorted(actual_state.unvalued_external_flow_assets):
+        review_notes.add(f"{asset} の入出金はJPY評価が不足しているため、入出金集計に一部反映できていません")
     return PortfolioSnapshot(
         timestamp=timestamp,
         total_equity_jpy=quantize_jpy(total_equity_jpy),
         total_equity_usd=quantize_jpy(total_equity_usd),
         cash_jpy=quantize_jpy(cash_jpy),
         cash_usd=quantize_jpy(cash_usd),
+        external_inflows_jpy=quantize_jpy(actual_state.external_inflows_jpy),
+        external_inflows_usd=quantize_jpy(inflows_usd),
+        external_outflows_jpy=quantize_jpy(actual_state.external_outflows_jpy),
+        external_outflows_usd=quantize_jpy(outflows_usd),
+        net_external_flow_jpy=quantize_jpy(net_external_flow_jpy),
+        net_external_flow_usd=quantize_jpy(net_external_flow_usd),
+        equity_if_no_withdrawals_jpy=quantize_jpy(equity_if_no_withdrawals_jpy),
+        equity_if_no_withdrawals_usd=quantize_jpy(equity_if_no_withdrawals_usd),
+        equity_minus_net_contributions_jpy=quantize_jpy(equity_minus_net_contributions_jpy),
+        equity_minus_net_contributions_usd=quantize_jpy(equity_minus_net_contributions_usd),
         realized_pnl_jpy=quantize_jpy(actual_state.realized_pnl_jpy),
         realized_pnl_usd=quantize_jpy(realized_usd),
         unrealized_pnl_jpy=quantize_jpy(unrealized_jpy),
@@ -699,6 +757,9 @@ def _build_attribution_rows(
         fees_delta_jpy = (current.fees_jpy or ZERO) - (previous.fees_jpy or ZERO)
         funding_delta_jpy = (current.funding_jpy or ZERO) - (previous.funding_jpy or ZERO)
         slippage_delta_jpy = (current.slippage_jpy or ZERO) - (previous.slippage_jpy or ZERO)
+        inflow_delta_jpy = (current.external_inflows_jpy or ZERO) - (previous.external_inflows_jpy or ZERO)
+        outflow_delta_jpy = (current.external_outflows_jpy or ZERO) - (previous.external_outflows_jpy or ZERO)
+        net_flow_delta_jpy = (current.net_external_flow_jpy or ZERO) - (previous.net_external_flow_jpy or ZERO)
         inventory_delta_jpy = (current.inventory_revaluation_jpy or ZERO) - (
             previous.inventory_revaluation_jpy or ZERO
         )
@@ -712,6 +773,12 @@ def _build_attribution_rows(
                 period_end=current_ts,
                 delta_v_jpy=quantize_jpy(delta_v_jpy),
                 delta_v_usd=quantize_jpy(_to_usd(delta_v_jpy, history, current_ts, review_notes)),
+                external_inflows_jpy=quantize_jpy(inflow_delta_jpy),
+                external_inflows_usd=quantize_jpy(_to_usd(inflow_delta_jpy, history, current_ts, review_notes)),
+                external_outflows_jpy=quantize_jpy(outflow_delta_jpy),
+                external_outflows_usd=quantize_jpy(_to_usd(outflow_delta_jpy, history, current_ts, review_notes)),
+                net_external_flow_jpy=quantize_jpy(net_flow_delta_jpy),
+                net_external_flow_usd=quantize_jpy(_to_usd(net_flow_delta_jpy, history, current_ts, review_notes)),
                 realized_pnl_jpy=quantize_jpy(realized_delta_jpy),
                 realized_pnl_usd=quantize_jpy(_to_usd(realized_delta_jpy, history, current_ts, review_notes)),
                 unrealized_pnl_jpy=current.unrealized_pnl_jpy,
@@ -858,6 +925,16 @@ def _execute_portfolio_analysis(
             "fees_usd": final_snapshot.fees_usd,
             "reward_income_jpy": final_snapshot.reward_income_jpy,
             "reward_income_usd": final_snapshot.reward_income_usd,
+            "external_inflows_jpy": final_snapshot.external_inflows_jpy,
+            "external_inflows_usd": final_snapshot.external_inflows_usd,
+            "external_outflows_jpy": final_snapshot.external_outflows_jpy,
+            "external_outflows_usd": final_snapshot.external_outflows_usd,
+            "net_external_flow_jpy": final_snapshot.net_external_flow_jpy,
+            "net_external_flow_usd": final_snapshot.net_external_flow_usd,
+            "equity_if_no_withdrawals_jpy": final_snapshot.equity_if_no_withdrawals_jpy,
+            "equity_if_no_withdrawals_usd": final_snapshot.equity_if_no_withdrawals_usd,
+            "equity_minus_net_contributions_jpy": final_snapshot.equity_minus_net_contributions_jpy,
+            "equity_minus_net_contributions_usd": final_snapshot.equity_minus_net_contributions_usd,
             "method_reference": method_reference.value,
         }
     )

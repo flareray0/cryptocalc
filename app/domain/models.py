@@ -136,6 +136,16 @@ class PortfolioSnapshot:
     total_equity_usd: Decimal | None
     cash_jpy: Decimal | None
     cash_usd: Decimal | None
+    external_inflows_jpy: Decimal | None
+    external_inflows_usd: Decimal | None
+    external_outflows_jpy: Decimal | None
+    external_outflows_usd: Decimal | None
+    net_external_flow_jpy: Decimal | None
+    net_external_flow_usd: Decimal | None
+    equity_if_no_withdrawals_jpy: Decimal | None
+    equity_if_no_withdrawals_usd: Decimal | None
+    equity_minus_net_contributions_jpy: Decimal | None
+    equity_minus_net_contributions_usd: Decimal | None
     realized_pnl_jpy: Decimal | None
     realized_pnl_usd: Decimal | None
     unrealized_pnl_jpy: Decimal | None
@@ -187,6 +197,12 @@ class PnlAttributionSnapshot:
     period_end: datetime | None
     delta_v_jpy: Decimal | None
     delta_v_usd: Decimal | None
+    external_inflows_jpy: Decimal | None
+    external_inflows_usd: Decimal | None
+    external_outflows_jpy: Decimal | None
+    external_outflows_usd: Decimal | None
+    net_external_flow_jpy: Decimal | None
+    net_external_flow_usd: Decimal | None
     realized_pnl_jpy: Decimal | None
     realized_pnl_usd: Decimal | None
     unrealized_pnl_jpy: Decimal | None

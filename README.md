@@ -221,6 +221,18 @@ H:\cryptocalc\
   - `cash_jpy + Σ(quantity × jpy_price)` で計算した JPY 建て総資産
 - `total_equity_usd`
   - `total_equity_jpy / USDJPY` で換算した USD 建て総資産
+- `external_inflows_jpy / usd`
+  - 外部から口座へ入ってきた入金・入庫の累計
+- `external_outflows_jpy / usd`
+  - 口座から外へ出た出金・出庫の累計
+- `net_external_flow_jpy / usd`
+  - `累計入金 - 累計出金`
+- `equity_if_no_withdrawals_jpy / usd`
+  - `総資産 + 累計出金`
+  - 「生活費などで引き出していなかったら、今どれくらい残っていたか」を見る補助指標
+- `equity_minus_net_contributions_jpy / usd`
+  - `総資産 - 純入金`
+  - 自分で後から入れたお金を差し引いた、ざっくりした増減感を見る補助指標
 - `asset_quantity_total_by_symbol`
   - 各時点での BTC / ETH / XRP / SOL などの保有総量
 - `realized_pnl_jpy / usd`
@@ -248,6 +260,8 @@ H:\cryptocalc\
 ### 分析の前提
 - 分析は **税務申告値の置換ではなく補助表示** です
 - 分析画面では単年だけでなく、開始年〜終了年を指定した **期間分析 / 全期間分析** もできます
+- 分析画面では、`累計入金 / 累計出金 / 純入金 / 出金してなかったら / 純入金差引後` を見て、
+  「残高は増えていないが、生活側の出し入れを除くとどうだったか」を確認できます
 - 分析画面の `現在残高照合` では、Binance API の現在残高を公開 JPY 価格で評価して、履歴再構築の数量差・評価額差を確認できます
 - USD 建て分析は `USD` / `USDT` / `USDC` 等の内部レート、または手動レート CSV に依存します
 - `ETH/BTC` のような暗号資産同士交換は、JPY 時価が無ければ手動補完を優先します
@@ -328,9 +342,10 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 2. 必要なら `手動補正 CSV` と `JPY 補完レート CSV` を読み込む
 3. `計算結果` 画面で年度と方式を選んで計算する
 4. `分析` 画面で年度と参照方式を選び、総資産 / benchmark / edge を確認する
-5. 必要なら `現在残高照合` を実行して、Binance 現在残高ベース総資産と履歴再構築残高の差を確認する
-6. `要確認` 画面で未知 / 未評価 / 重複疑いを確認する
-7. `エクスポート` 画面で年次 CSV / 国税庁補助 CSV / Excel / 分析 CSV / JSON を生成する
+5. `分析` 画面で `累計入金 / 累計出金 / 純入金 / 出金してなかったら / 純入金差引後` を見て、生活側の出し入れを考慮した感覚と突き合わせる
+6. 必要なら `現在残高照合` を実行して、Binance 現在残高ベース総資産と履歴再構築残高の差を確認する
+7. `要確認` 画面で未知 / 未評価 / 重複疑いを確認する
+8. `エクスポート` 画面で年次 CSV / 国税庁補助 CSV / Excel / 分析 CSV / JSON を生成する
 
 ## サンプルファイル
 - `samples/binance_japan_sample.csv`
@@ -344,7 +359,7 @@ python -m pytest -q
 ```
 
 現在のローカル確認:
-- `30 passed`
+- `31 passed`
 - 実 Binance Japan XLSX sample の parser 読込確認済み
 
 ## ロールバック

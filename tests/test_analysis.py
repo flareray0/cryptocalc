@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from app.api.main import app
-from app.domain.enums import CalculationMethod
+from app.domain.enums import CalculationMethod, ClassificationStatus, ImportSourceKind, Side, TransactionType
+from app.domain.models import NormalizedTransaction
 from app.parsers.binance_japan_parser import BinanceJapanParser
 from app.services.analysis_service import AnalysisService
 from app.services.balance_reconciliation_service import BalanceReconciliationService
@@ -227,3 +229,138 @@ def test_balance_reconciliation_service_and_api(monkeypatch):
     assert page.status_code == 200
     assert "現在残高照合テーブル" in page.text
     assert "Binance残高ベース総資産 JPY" in page.text
+
+
+def test_analysis_tracks_external_flows_and_no_withdrawal_equity():
+    save_transactions(
+        [
+            NormalizedTransaction(
+                id="tx_deposit",
+                source_exchange="manual",
+                source_file="fixture",
+                raw_row_number=1,
+                timestamp_jst=datetime(2025, 1, 1, 9, 0, tzinfo=timezone.utc).astimezone(),
+                timestamp_utc=datetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc),
+                tx_type=TransactionType.TRANSFER_IN,
+                base_asset="JPY",
+                quote_asset=None,
+                quantity=Decimal("100000"),
+                quote_quantity=None,
+                unit_price_quote=None,
+                price_per_unit_jpy=Decimal("1"),
+                gross_amount_jpy=Decimal("100000"),
+                fee_asset=None,
+                fee_amount=None,
+                fee_jpy=None,
+                side=Side.NONE,
+                note="deposit",
+                raw_payload={},
+                classification_status=ClassificationStatus.CLASSIFIED,
+                review_flag=False,
+                review_reasons=[],
+                source_kind=ImportSourceKind.MANUAL,
+                jpy_rate_source="manual",
+            ),
+            NormalizedTransaction(
+                id="tx_buy",
+                source_exchange="manual",
+                source_file="fixture",
+                raw_row_number=2,
+                timestamp_jst=datetime(2025, 1, 10, 9, 0, tzinfo=timezone.utc).astimezone(),
+                timestamp_utc=datetime(2025, 1, 10, 0, 0, tzinfo=timezone.utc),
+                tx_type=TransactionType.BUY,
+                base_asset="BTC",
+                quote_asset="JPY",
+                quantity=Decimal("0.01"),
+                quote_quantity=Decimal("100000"),
+                unit_price_quote=Decimal("10000000"),
+                price_per_unit_jpy=Decimal("10000000"),
+                gross_amount_jpy=Decimal("100000"),
+                fee_asset="JPY",
+                fee_amount=Decimal("0"),
+                fee_jpy=Decimal("0"),
+                side=Side.BUY,
+                note="buy",
+                raw_payload={},
+                classification_status=ClassificationStatus.CLASSIFIED,
+                review_flag=False,
+                review_reasons=[],
+                source_kind=ImportSourceKind.MANUAL,
+                jpy_rate_source="manual",
+            ),
+            NormalizedTransaction(
+                id="tx_sell",
+                source_exchange="manual",
+                source_file="fixture",
+                raw_row_number=3,
+                timestamp_jst=datetime(2025, 6, 1, 9, 0, tzinfo=timezone.utc).astimezone(),
+                timestamp_utc=datetime(2025, 6, 1, 0, 0, tzinfo=timezone.utc),
+                tx_type=TransactionType.SELL,
+                base_asset="BTC",
+                quote_asset="JPY",
+                quantity=Decimal("0.004"),
+                quote_quantity=Decimal("60000"),
+                unit_price_quote=Decimal("15000000"),
+                price_per_unit_jpy=Decimal("15000000"),
+                gross_amount_jpy=Decimal("60000"),
+                fee_asset="JPY",
+                fee_amount=Decimal("500"),
+                fee_jpy=Decimal("500"),
+                side=Side.SELL,
+                note="sell",
+                raw_payload={},
+                classification_status=ClassificationStatus.CLASSIFIED,
+                review_flag=False,
+                review_reasons=[],
+                source_kind=ImportSourceKind.MANUAL,
+                jpy_rate_source="manual",
+            ),
+            NormalizedTransaction(
+                id="tx_withdraw",
+                source_exchange="manual",
+                source_file="fixture",
+                raw_row_number=4,
+                timestamp_jst=datetime(2025, 7, 1, 9, 0, tzinfo=timezone.utc).astimezone(),
+                timestamp_utc=datetime(2025, 7, 1, 0, 0, tzinfo=timezone.utc),
+                tx_type=TransactionType.TRANSFER_OUT,
+                base_asset="JPY",
+                quote_asset=None,
+                quantity=Decimal("30000"),
+                quote_quantity=None,
+                unit_price_quote=None,
+                price_per_unit_jpy=Decimal("1"),
+                gross_amount_jpy=Decimal("30000"),
+                fee_asset=None,
+                fee_amount=None,
+                fee_jpy=None,
+                side=Side.NONE,
+                note="withdraw",
+                raw_payload={},
+                classification_status=ClassificationStatus.CLASSIFIED,
+                review_flag=False,
+                review_reasons=[],
+                source_kind=ImportSourceKind.MANUAL,
+                jpy_rate_source="manual",
+            ),
+        ]
+    )
+
+    result = AnalysisService().run(year=2025, method_reference=CalculationMethod.MOVING_AVERAGE)
+    latest = result["latest_snapshot"]
+
+    assert latest["total_equity_jpy"] == "119500.00"
+    assert latest["realized_pnl_jpy"] == "20000.00"
+    assert latest["fees_jpy"] == "500.00"
+    assert latest["external_inflows_jpy"] == "100000.00"
+    assert latest["external_outflows_jpy"] == "30000.00"
+    assert latest["net_external_flow_jpy"] == "70000.00"
+    assert latest["equity_if_no_withdrawals_jpy"] == "149500.00"
+    assert latest["equity_minus_net_contributions_jpy"] == "49500.00"
+
+    page = TestClient(app).get(
+        "/analysis",
+        params={"year": 2025, "method_reference": "moving_average"},
+    )
+    assert page.status_code == 200
+    assert "出金してなかったら JPY" in page.text
+    assert "149500.00" in page.text
