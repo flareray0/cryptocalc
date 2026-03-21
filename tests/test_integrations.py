@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import httpx
+import pytest
+import time
 from pathlib import Path
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -10,6 +12,7 @@ from app.domain.models import NormalizedTransaction
 from app.integrations.binance_japan_api_client import BinanceJapanApiClient
 from app.services.exchange_sync_service import ExchangeSyncService
 from app.services.import_service import ImportService
+from app.storage.secrets_store import SecretsStore
 
 
 def test_saved_api_credentials_can_be_reused(monkeypatch):
@@ -188,6 +191,39 @@ def test_api_fill_rows_are_aggregated_by_order_id():
     assert first["quoteQty"] == "201"
     assert first["commission"] == "0.15"
     assert first["price"] == "100.5"
+
+
+def test_sync_server_time_adjusts_timestamp(monkeypatch):
+    client = BinanceJapanApiClient(
+        api_key="ABCD1234EFGH5678",
+        api_secret="dummy-secret",
+        base_url="https://api.binance.com",
+    )
+    now_ms = int(time.time() * 1000)
+
+    class DummyResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"serverTime": now_ms + 5000}
+
+    monkeypatch.setattr(client.client, "get", lambda path: DummyResponse())
+
+    client.sync_server_time()
+
+    assert 4000 <= client._timestamp() - now_ms <= 6000
+
+
+def test_secrets_store_raises_clear_error_on_non_windows(monkeypatch):
+    monkeypatch.setattr("app.storage.secrets_store.sys.platform", "linux")
+    store = SecretsStore("test_non_windows.secrets.json")
+
+    with pytest.raises(OSError, match="Windows DPAPI 専用"):
+        store.save({"api_key": "demo", "api_secret": "secret", "base_url": "https://api.binance.com"})
+
+    with pytest.raises(OSError, match="Windows DPAPI 専用"):
+        store.load()
 
 
 def test_sync_skips_api_rows_when_csv_authoritative_window_exists(monkeypatch, tmp_path):

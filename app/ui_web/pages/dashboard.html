@@ -34,7 +34,7 @@
 </section>
 {% endif %}
 
-{% if analysis_summary and analysis_summary.latest_snapshot %}
+{% if analysis_summary and analysis_summary.latest_snapshot and analysis_summary.latest_snapshot.total_equity_jpy is not none %}
 <section class="summary-grid">
   <article>
     <h3>総資産 JPY</h3>

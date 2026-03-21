@@ -217,9 +217,14 @@ class BinanceJapanParser(BaseParser):
 
         from openpyxl import load_workbook
 
-        wb = load_workbook(path, read_only=False, data_only=True)
+        wb = load_workbook(path, read_only=True, data_only=True)
         ws = wb[wb.sheetnames[0]]
         header_row_number, headers, detected_layout = self._detect_xlsx_header(ws)
+        if not headers:
+            wb.close()
+            wb = load_workbook(path, read_only=False, data_only=True)
+            ws = wb[wb.sheetnames[0]]
+            header_row_number, headers, detected_layout = self._detect_xlsx_header(ws)
         if not headers:
             return [], "xlsx_unknown_layout", None
 
@@ -244,7 +249,7 @@ class BinanceJapanParser(BaseParser):
         for row_number, row in enumerate(
             worksheet.iter_rows(
                 min_row=1,
-                max_row=min(getattr(worksheet, "max_row", HEADER_SCAN_MAX_ROWS), HEADER_SCAN_MAX_ROWS),
+                max_row=min(getattr(worksheet, "max_row") or HEADER_SCAN_MAX_ROWS, HEADER_SCAN_MAX_ROWS),
                 values_only=True,
             ),
             start=1,
@@ -1259,10 +1264,12 @@ class BinanceJapanParser(BaseParser):
         text = value.strip()
         if not text:
             return None
-        try:
-            return datetime.strptime(text, "%y-%m-%d %H:%M:%S").replace(tzinfo=JST)
-        except ValueError:
-            return None
+        for fmt in ("%y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+            try:
+                return datetime.strptime(text, fmt).replace(tzinfo=JST)
+            except ValueError:
+                continue
+        return None
 
     def _japanese_row_timestamps(self, row: dict[str, Any]) -> tuple[datetime | None, datetime | None]:
         local_dt = self._parse_japanese_timestamp(str(row.get("時間") or ""))

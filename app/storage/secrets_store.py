@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 import base64
 import ctypes
 import json
@@ -69,11 +70,21 @@ def _dpapi_decrypt(data: bytes) -> bytes:
         kernel32.LocalFree(out_blob.pbData)
 
 
+def _assert_windows() -> None:
+    if sys.platform != "win32":
+        raise OSError(
+            "SecretsStore は Windows DPAPI 専用です。"
+            " Linux / macOS では app/storage/secrets/ 配下のファイルを手動で管理するか、"
+            " 環境変数経由で API キーを渡してください。"
+        )
+
+
 class SecretsStore:
     def __init__(self, file_name: str = "binance_japan_api.secrets.json") -> None:
         self.path = get_paths().secrets / file_name
 
     def save(self, payload: dict[str, str]) -> None:
+        _assert_windows()
         encoded = base64.b64encode(
             _dpapi_encrypt(json.dumps(payload).encode("utf-8"))
         ).decode("ascii")
@@ -81,6 +92,7 @@ class SecretsStore:
             json.dump({"protected": True, "payload": encoded}, fh, ensure_ascii=False, indent=2)
 
     def load(self) -> dict[str, str] | None:
+        _assert_windows()
         if not self.path.exists():
             return None
         with self.path.open("r", encoding="utf-8") as fh:

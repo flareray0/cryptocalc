@@ -20,6 +20,7 @@ class BinanceJapanApiClient(ExchangeClientBase):
         self.api_key = api_key
         self.api_secret = api_secret.encode("utf-8")
         self.base_url = base_url.rstrip("/")
+        self._time_offset_ms: int = 0
         self.client = httpx.Client(
             base_url=self.base_url,
             timeout=30.0,
@@ -27,7 +28,17 @@ class BinanceJapanApiClient(ExchangeClientBase):
         )
 
     def test_connection(self) -> dict[str, Any]:
+        self.sync_server_time()
         return cast(dict[str, Any], self._signed_get("/api/v3/account", {"timestamp": self._timestamp()}))
+
+    def sync_server_time(self) -> None:
+        """サーバー時刻を取得してローカルとのオフセットを記録する。
+        認証エラーが続く場合に test_connection の前に呼ぶ。"""
+        response = self.client.get("/api/v3/time")
+        response.raise_for_status()
+        server_ms: int = response.json()["serverTime"]
+        local_ms = int(time.time() * 1000)
+        self._time_offset_ms = server_ms - local_ms
 
     def fetch_exchange_info(self) -> dict[str, Any]:
         response = self.client.get("/api/v3/exchangeInfo")
@@ -240,7 +251,7 @@ class BinanceJapanApiClient(ExchangeClientBase):
         return response.json()
 
     def _timestamp(self) -> int:
-        return int(time.time() * 1000)
+        return int(time.time() * 1000) + self._time_offset_ms
 
     def _format_http_error(self, exc: httpx.HTTPStatusError, path: str, params: dict[str, Any]) -> str:
         response = exc.response

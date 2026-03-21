@@ -73,6 +73,27 @@ def test_binance_japan_parser_reads_japanese_balance_history(tmp_path):
     assert batch.transactions[2].quote_asset == "BTC"
 
 
+def test_binance_japan_parser_accepts_four_digit_year_japanese_timestamp(tmp_path):
+    sample = tmp_path / "binance_jp_balance_history_4digit_year.csv"
+    sample.write_text(
+        "\n".join(
+            [
+                "ユーザーID,時間,アカウント,操作,コイン,変更,備考",
+                "1,2025-07-17 09:18:07,Spot,Deposit,JPY,15000,",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    batch = BinanceJapanParser().parse(sample)
+
+    assert batch.transaction_count == 1
+    assert batch.transactions[0].timestamp_jst is not None
+    assert batch.transactions[0].timestamp_jst.year == 2025
+    assert batch.transactions[0].tx_type.value == "transfer_in"
+
+
 def test_binance_japan_parser_reads_report_style_xlsx_with_offset_header(tmp_path):
     sample = tmp_path / "binance_jp_report.xlsx"
     wb = Workbook()

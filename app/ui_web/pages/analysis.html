@@ -88,7 +88,7 @@
   <p class="muted">Binance API の現在残高を取得して、いま見ている分析結果の再構築残高と差分を並べて見るよ。税務計算そのものは変えないよ。</p>
 </section>
 
-{% if analysis_run %}
+{% if analysis_run and analysis_run.portfolio_snapshots %}
 <section class="summary-grid">
   <article>
     <h3>総資産 JPY</h3>
@@ -264,7 +264,7 @@
 </section>
 {% endif %}
 
-{% if analysis_window_run %}
+{% if analysis_window_run and analysis_window_run.portfolio_snapshots %}
 <section class="summary-grid">
   <article>
     <h3>期間</h3>

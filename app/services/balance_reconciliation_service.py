@@ -39,7 +39,9 @@ class BalanceReconciliationService:
         client = self._load_client()
         account = client.test_connection()
         exchange_balances = self._extract_balances(account)
-        prices = self._fetch_public_jpy_prices(exchange_balances.keys())
+        secret = self.secrets.load()
+        _base_url = secret.get("base_url") if secret else None
+        prices = self._fetch_public_jpy_prices(exchange_balances.keys(), base_url=_base_url)
         reference = self._load_reference_analysis(
             start_year=start_year,
             end_year=end_year,
@@ -106,8 +108,9 @@ class BalanceReconciliationService:
             balances[asset] = total
         return balances
 
-    def _fetch_public_jpy_prices(self, assets: Any) -> dict[str, Decimal | None]:
+    def _fetch_public_jpy_prices(self, assets: Any, base_url: str | None = None) -> dict[str, Decimal | None]:
         prices: dict[str, Decimal | None] = {}
+        _base = (base_url or "https://api.binance.com").rstrip("/")
         with httpx.Client(timeout=20.0) as client:
             for asset in assets:
                 code = str(asset).upper()
@@ -115,7 +118,7 @@ class BalanceReconciliationService:
                     prices[code] = Decimal("1")
                     continue
                 response = client.get(
-                    "https://api.binance.com/api/v3/ticker/price",
+                    f"{_base}/api/v3/ticker/price",
                     params={"symbol": f"{code}JPY"},
                 )
                 if response.status_code == 200:

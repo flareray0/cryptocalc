@@ -13,6 +13,7 @@ from app.parsers.binance_japan_parser import BinanceJapanParser
 from app.services.analysis_service import AnalysisService
 from app.services.balance_reconciliation_service import BalanceReconciliationService
 from app.services.import_service import ImportService
+from app.services.report_service import ReportService
 from app.storage.app_state import save_transactions
 from app.storage.analysis_state import load_latest_analysis_run
 from app.storage.analysis_window_state import load_latest_analysis_window_run
@@ -167,7 +168,7 @@ def test_balance_reconciliation_service_and_api(monkeypatch):
     monkeypatch.setattr(
         BalanceReconciliationService,
         "_fetch_public_jpy_prices",
-        lambda self, assets: {
+        lambda self, assets, base_url=None: {
             "BTC": Decimal("11000000"),
             "ETH": Decimal("22000"),
             "BNB": Decimal("100000"),
@@ -231,6 +232,38 @@ def test_balance_reconciliation_service_and_api(monkeypatch):
     assert page.status_code == 200
     assert "現在残高照合テーブル" in page.text
     assert "Binance残高ベース総資産 JPY" in page.text
+
+
+def test_balance_reconciliation_uses_saved_base_url_for_public_prices(monkeypatch):
+    captured: dict[str, str | None] = {"base_url": None}
+
+    class DummyClient:
+        def test_connection(self):
+            return {
+                "accountType": "SPOT",
+                "canTrade": True,
+                "balances": [{"asset": "JPY", "free": "1000", "locked": "0"}],
+            }
+
+    monkeypatch.setattr(BalanceReconciliationService, "_load_client", lambda self: DummyClient())
+    monkeypatch.setattr(
+        BalanceReconciliationService,
+        "_load_reference_analysis",
+        lambda self, **kwargs: None,
+    )
+
+    def _fake_fetch(self, assets, base_url=None):
+        captured["base_url"] = base_url
+        return {"JPY": Decimal("1")}
+
+    service = BalanceReconciliationService()
+    monkeypatch.setattr(service.secrets, "load", lambda: {"base_url": "https://api.binance.jp"})
+    monkeypatch.setattr(service, "_fetch_public_jpy_prices", _fake_fetch.__get__(service, BalanceReconciliationService))
+
+    payload = service.refresh(method_reference=CalculationMethod.TOTAL_AVERAGE)
+
+    assert payload["exchange_total_equity_jpy"] == "1000.00"
+    assert captured["base_url"] == "https://api.binance.jp"
 
 
 def test_analysis_tracks_external_flows_and_no_withdrawal_equity():
@@ -366,3 +399,36 @@ def test_analysis_tracks_external_flows_and_no_withdrawal_equity():
     assert page.status_code == 200
     assert "出金してなかったら JPY" in page.text
     assert "149500.00" in page.text
+
+
+def test_analysis_pages_tolerate_empty_snapshots(monkeypatch):
+    monkeypatch.setattr(ReportService, "latest_run", lambda self, **kwargs: None)
+    monkeypatch.setattr(
+        AnalysisService,
+        "latest_run",
+        lambda self, **kwargs: {
+            "portfolio_snapshots": [],
+            "asset_summary_table": [],
+            "review_notes": [],
+            "edge_report": {},
+        },
+    )
+    monkeypatch.setattr(
+        AnalysisService,
+        "latest_window_run",
+        lambda self, **kwargs: {
+            "portfolio_snapshots": [],
+            "asset_summary_table": [],
+            "review_notes": [],
+            "start_year": 2025,
+            "end_year": 2026,
+        },
+    )
+
+    client = TestClient(app)
+    dashboard = client.get("/dashboard")
+    analysis = client.get("/analysis")
+
+    assert dashboard.status_code == 200
+    assert analysis.status_code == 200
+    assert "まだ分析結果がないよ" in analysis.text
