@@ -26,6 +26,7 @@
   </div>
   <div class="panel">
     <h3>同期実行</h3>
+    <p class="muted">API は約定 fill 単位を返すことがあるので、このアプリでは注文単位へ集約しているよ。CSV の件数とは完全一致しない場合があるよ。</p>
     <form action="/ui/integrations/sync" method="post">
       <label>symbols
         <input type="text" name="symbols" value="{{ sync_status.default_symbols or settings.binance_japan_api.default_symbols }}" placeholder="空欄なら保存済み設定、無ければ exchangeInfo から自動推定">

@@ -101,13 +101,65 @@ class BinanceJapanApiClient(ExchangeClientBase):
             )
             if page_warning:
                 warnings.append(page_warning)
-            for row in page_rows:
+            normalized_rows = self._aggregate_trade_rows(page_rows)
+            if len(normalized_rows) != len(page_rows):
+                warnings.append(
+                    f"{symbol} は API fill {len(page_rows)} 件を注文単位 {len(normalized_rows)} 件へ集約しました。"
+                    " CSV の件数とは粒度が一致しない場合があります。"
+                )
+            for row in normalized_rows:
                 rows.append(self._trade_to_tx(row, symbol, base_asset, quote_asset))
         return {
             "transactions": rows,
             "resolved_symbols": resolved_symbols,
             "warnings": warnings,
         }
+
+    def _aggregate_trade_rows(self, rows: list[dict]) -> list[dict]:
+        grouped: dict[tuple[int, bool], list[dict]] = {}
+        passthrough: list[dict] = []
+        for row in rows:
+            order_id = row.get("orderId")
+            if order_id is None:
+                passthrough.append(row)
+                continue
+            grouped.setdefault((int(order_id), bool(row.get("isBuyer"))), []).append(row)
+
+        aggregated: list[dict] = []
+        for _, group in grouped.items():
+            if len(group) == 1:
+                aggregated.append(group[0])
+                continue
+
+            fee_assets = {(item.get("commissionAsset") or "").upper() for item in group}
+            if len(fee_assets) != 1:
+                aggregated.extend(group)
+                continue
+
+            total_qty = sum(to_decimal(item.get("qty")) or 0 for item in group)
+            total_quote = sum(to_decimal(item.get("quoteQty")) or 0 for item in group)
+            total_commission = sum(to_decimal(item.get("commission")) or 0 for item in group)
+            weighted_price = None if not total_qty else total_quote / total_qty
+            latest = max(group, key=lambda item: int(item.get("time") or 0))
+
+            aggregated.append(
+                {
+                    **latest,
+                    "id": latest.get("orderId") or latest.get("id"),
+                    "qty": str(total_qty),
+                    "quoteQty": str(total_quote),
+                    "price": str(weighted_price) if weighted_price is not None else latest.get("price"),
+                    "commission": str(total_commission),
+                    "commissionAsset": next(iter(fee_assets)),
+                    "_fill_count": len(group),
+                    "_fill_ids": [item.get("id") for item in group],
+                    "_aggregated": True,
+                }
+            )
+
+        aggregated.extend(passthrough)
+        aggregated.sort(key=lambda item: (int(item.get("time") or 0), int(item.get("id") or 0)))
+        return aggregated
 
     def _fetch_my_trades_full_history(
         self,
@@ -259,6 +311,10 @@ class BinanceJapanApiClient(ExchangeClientBase):
             review_reasons.append("API取引のJPY換算が未確定")
         if fee_amount and fee_asset and fee_asset != "JPY":
             review_reasons.append("API取引手数料のJPY換算が未確定")
+        fill_count = int(row.get("_fill_count") or 1)
+        raw_payload = dict(row)
+        if fill_count > 1:
+            raw_payload["aggregation_note"] = "api fills aggregated by orderId"
         return NormalizedTransaction(
             id=f"api_trade_{symbol}_{row.get('id')}",
             source_exchange="binance_japan_api",
@@ -278,8 +334,8 @@ class BinanceJapanApiClient(ExchangeClientBase):
             fee_amount=fee_amount,
             fee_jpy=fee_amount if fee_asset == "JPY" else None,
             side=side,
-            note=f"symbol={symbol}; orderId={row.get('orderId')}",
-            raw_payload=row,
+            note=f"symbol={symbol}; orderId={row.get('orderId')}; fills={fill_count}",
+            raw_payload=raw_payload,
             classification_status=(
                 ClassificationStatus.REVIEW_REQUIRED if review_reasons else ClassificationStatus.CLASSIFIED
             ),

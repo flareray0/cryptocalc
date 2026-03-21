@@ -127,3 +127,58 @@ def test_sync_uses_saved_default_symbols_when_request_is_empty(monkeypatch):
     result = service.sync(symbols=[], start_time_ms=None, end_time_ms=None)
     assert result["resolved_symbols"] == ["BTCJPY", "ETHJPY"]
     assert result["symbol_source"] == "saved_default"
+
+
+def test_api_fill_rows_are_aggregated_by_order_id():
+    client = BinanceJapanApiClient(
+        api_key="ABCD1234EFGH5678",
+        api_secret="dummy-secret",
+        base_url="https://api.binance.com",
+    )
+
+    aggregated = client._aggregate_trade_rows(
+        [
+            {
+                "id": 101,
+                "orderId": 9001,
+                "time": 1000,
+                "price": "100",
+                "qty": "1.5",
+                "quoteQty": "150",
+                "commission": "0.1",
+                "commissionAsset": "JPY",
+                "isBuyer": True,
+            },
+            {
+                "id": 102,
+                "orderId": 9001,
+                "time": 1001,
+                "price": "102",
+                "qty": "0.5",
+                "quoteQty": "51",
+                "commission": "0.05",
+                "commissionAsset": "JPY",
+                "isBuyer": True,
+            },
+            {
+                "id": 103,
+                "orderId": 9002,
+                "time": 2000,
+                "price": "120",
+                "qty": "1",
+                "quoteQty": "120",
+                "commission": "0.2",
+                "commissionAsset": "JPY",
+                "isBuyer": False,
+            },
+        ]
+    )
+
+    assert len(aggregated) == 2
+    first = aggregated[0]
+    assert first["orderId"] == 9001
+    assert first["_fill_count"] == 2
+    assert first["qty"] == "2.0"
+    assert first["quoteQty"] == "201"
+    assert first["commission"] == "0.15"
+    assert first["price"] == "100.5"
