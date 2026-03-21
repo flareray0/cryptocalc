@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from app.domain.enums import CalculationMethod
@@ -24,6 +26,18 @@ def _index_path():
     return _analysis_root() / "index.json"
 
 
+def _run_sort_key(row: dict[str, Any]) -> str:
+    saved_at = row.get("saved_at")
+    if saved_at:
+        return str(saved_at)
+    run_id = row.get("run_id")
+    if run_id:
+        path = _run_path(run_id)
+        if Path(path).exists():
+            return datetime.fromtimestamp(Path(path).stat().st_mtime).isoformat()
+    return str(row.get("created_at") or "")
+
+
 def save_analysis_run(result: AnalysisRunResult) -> None:
     payload = serialize_payload(asdict(result))
     payload["method_reference"] = result.method_reference.value
@@ -36,7 +50,8 @@ def save_analysis_run(result: AnalysisRunResult) -> None:
             "run_id": result.run_id,
             "year": result.year,
             "method_reference": result.method_reference.value,
-            "created_at": payload.get("portfolio_snapshots", [{}])[-1].get("timestamp"),
+            "created_at": datetime.now().isoformat(),
+            "saved_at": datetime.now().isoformat(),
         }
     )
     dump_json(_index_path(), index)
@@ -54,7 +69,7 @@ def load_latest_analysis_run(
     year: int | None = None,
 ) -> dict[str, Any] | None:
     index = load_json(_index_path(), [])
-    rows = sorted(index, key=lambda row: row.get("created_at") or "", reverse=True)
+    rows = sorted(index, key=_run_sort_key, reverse=True)
     for row in rows:
         if method_reference and row.get("method_reference") != method_reference.value:
             continue

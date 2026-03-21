@@ -461,6 +461,24 @@ def _total_value_in_jpy(
     return total, cash
 
 
+def _has_meaningful_starting_portfolio(state: AnalysisState) -> bool:
+    return any(quantity != ZERO for quantity in state.balances.values())
+
+
+def _has_explicit_opening_balance(
+    transactions: list,
+    period_start: datetime,
+    period_end: datetime,
+) -> bool:
+    for tx in transactions:
+        timestamp = tx.timestamp_jst or tx.timestamp_utc
+        if timestamp is None:
+            continue
+        if period_start <= timestamp <= period_end and tx.tx_type is TransactionType.OPENING_BALANCE:
+            return True
+    return False
+
+
 def _unrealized_pnl_jpy(
     balances: dict[str, Decimal],
     cost_positions: dict[str, dict[str, Decimal]],
@@ -497,11 +515,14 @@ def _make_snapshot(
     timestamp: datetime | None,
     actual_state: AnalysisState,
     benchmark_state: AnalysisState,
+    benchmark_enabled: bool,
     history: PriceHistory,
     review_notes: set[str],
 ) -> PortfolioSnapshot:
     total_equity_jpy, cash_jpy = _total_value_in_jpy(actual_state.balances, history, timestamp, review_notes)
-    benchmark_equity_jpy, _ = _total_value_in_jpy(benchmark_state.balances, history, timestamp, review_notes)
+    benchmark_equity_jpy = None
+    if benchmark_enabled:
+        benchmark_equity_jpy, _ = _total_value_in_jpy(benchmark_state.balances, history, timestamp, review_notes)
     unrealized_jpy = _unrealized_pnl_jpy(
         actual_state.balances,
         actual_state.cost_positions,
@@ -518,12 +539,12 @@ def _make_snapshot(
     slippage_usd = _to_usd(actual_state.slippage_jpy, history, timestamp, review_notes)
     funding_usd = _to_usd(actual_state.funding_jpy, history, timestamp, review_notes)
     benchmark_equity_usd = _to_usd(benchmark_equity_jpy, history, timestamp, review_notes)
-    edge_jpy = total_equity_jpy - benchmark_equity_jpy
+    edge_jpy = None if benchmark_equity_jpy is None else total_equity_jpy - benchmark_equity_jpy
     edge_usd = None
     if total_equity_usd is not None and benchmark_equity_usd is not None:
         edge_usd = total_equity_usd - benchmark_equity_usd
     reward_income_usd = _to_usd(actual_state.reward_income_jpy, history, timestamp, review_notes)
-    trading_edge_jpy = edge_jpy - actual_state.reward_income_jpy
+    trading_edge_jpy = None if edge_jpy is None else edge_jpy - actual_state.reward_income_jpy
     trading_edge_usd = None
     if edge_usd is not None and reward_income_usd is not None:
         trading_edge_usd = edge_usd - reward_income_usd
@@ -677,7 +698,9 @@ def _build_attribution_rows(
         inventory_delta_jpy = (current.inventory_revaluation_jpy or ZERO) - (
             previous.inventory_revaluation_jpy or ZERO
         )
-        edge_delta_jpy = (current.edge_vs_benchmark_jpy or ZERO) - (previous.edge_vs_benchmark_jpy or ZERO)
+        edge_delta_jpy = None
+        if current.edge_vs_benchmark_jpy is not None and previous.edge_vs_benchmark_jpy is not None:
+            edge_delta_jpy = (current.edge_vs_benchmark_jpy or ZERO) - (previous.edge_vs_benchmark_jpy or ZERO)
         rows.append(
             PnlAttributionSnapshot(
                 period_label=current.timestamp.strftime("%Y-%m"),
@@ -730,12 +753,22 @@ def _execute_portfolio_analysis(
     benchmark_state = AnalysisState()
     benchmark_state.balances = defaultdict(lambda: ZERO, deepcopy(actual_state.balances))
     benchmark_state.cost_positions = deepcopy(actual_state.cost_positions)
+    benchmark_enabled = _has_meaningful_starting_portfolio(actual_state) or _has_explicit_opening_balance(
+        ordered,
+        period_start,
+        period_end,
+    )
+    if not benchmark_enabled:
+        review_notes.add(
+            "期首の持ち越し資産・現金が確認できないため、benchmark 比較と trading edge は未評価です"
+        )
 
     portfolio_snapshots: list[PortfolioSnapshot] = [
         _make_snapshot(
             timestamp=period_start,
             actual_state=actual_state,
             benchmark_state=benchmark_state,
+            benchmark_enabled=benchmark_enabled,
             history=history,
             review_notes=review_notes,
         )
@@ -763,6 +796,7 @@ def _execute_portfolio_analysis(
                 timestamp=tx.timestamp_jst,
                 actual_state=actual_state,
                 benchmark_state=benchmark_state,
+                benchmark_enabled=benchmark_enabled,
                 history=history,
                 review_notes=review_notes,
             )
@@ -777,6 +811,7 @@ def _execute_portfolio_analysis(
                 timestamp=period_end,
                 actual_state=actual_state,
                 benchmark_state=benchmark_state,
+                benchmark_enabled=benchmark_enabled,
                 history=history,
                 review_notes=review_notes,
             )

@@ -50,7 +50,7 @@
   </article>
   <article>
     <h3>benchmark 比較</h3>
-    <div class="big">{{ analysis_summary.latest_snapshot.edge_vs_benchmark_jpy }}</div>
+    <div class="big">{{ analysis_summary.latest_snapshot.edge_vs_benchmark_jpy or "未評価" }}</div>
   </article>
 </section>
 {% endif %}
@@ -77,7 +77,7 @@
     <ul class="list">
       <li>実現損益: {{ analysis_summary.latest_snapshot.realized_pnl_jpy }}</li>
       <li>含み損益: {{ analysis_summary.latest_snapshot.unrealized_pnl_jpy }}</li>
-      <li>トレードエッジ: {{ analysis_summary.latest_snapshot.trading_edge_jpy }}</li>
+      <li>トレードエッジ: {{ analysis_summary.latest_snapshot.trading_edge_jpy or "未評価" }}</li>
       <li><a href="/analysis">詳しい分析画面へ</a></li>
     </ul>
     {% else %}

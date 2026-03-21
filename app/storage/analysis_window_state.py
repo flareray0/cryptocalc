@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from app.domain.enums import CalculationMethod
@@ -22,6 +24,18 @@ def _index_path():
     return _analysis_window_root() / "index.json"
 
 
+def _run_sort_key(row: dict[str, Any]) -> str:
+    saved_at = row.get("saved_at")
+    if saved_at:
+        return str(saved_at)
+    run_id = row.get("run_id")
+    if run_id:
+        path = _run_path(run_id)
+        if Path(path).exists():
+            return datetime.fromtimestamp(Path(path).stat().st_mtime).isoformat()
+    return str(row.get("created_at") or "")
+
+
 def save_analysis_window_run(payload: dict[str, Any]) -> None:
     serialized = serialize_payload(payload)
     dump_json(_run_path(payload["run_id"]), serialized)
@@ -33,8 +47,8 @@ def save_analysis_window_run(payload: dict[str, Any]) -> None:
             "start_year": payload["start_year"],
             "end_year": payload["end_year"],
             "method_reference": payload["method_reference"],
-            "created_at": serialized.get("generated_at")
-            or serialized.get("portfolio_snapshots", [{}])[-1].get("timestamp"),
+            "created_at": datetime.now().isoformat(),
+            "saved_at": datetime.now().isoformat(),
         }
     )
     dump_json(_index_path(), index)
@@ -54,7 +68,7 @@ def load_latest_analysis_window_run(
     end_year: int | None = None,
 ) -> dict[str, Any] | None:
     index = load_json(_index_path(), [])
-    rows = sorted(index, key=lambda row: row.get("created_at") or "", reverse=True)
+    rows = sorted(index, key=_run_sort_key, reverse=True)
     for row in rows:
         if method_reference and row.get("method_reference") != method_reference.value:
             continue

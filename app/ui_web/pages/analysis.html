@@ -75,11 +75,11 @@
   </article>
   <article>
     <h3>benchmark 比較</h3>
-    <div class="big">{{ analysis_run.portfolio_snapshots[-1].edge_vs_benchmark_jpy }}</div>
+    <div class="big">{{ analysis_run.portfolio_snapshots[-1].edge_vs_benchmark_jpy or "未評価" }}</div>
   </article>
   <article>
     <h3>trading edge</h3>
-    <div class="big">{{ analysis_run.portfolio_snapshots[-1].trading_edge_jpy }}</div>
+    <div class="big">{{ analysis_run.portfolio_snapshots[-1].trading_edge_jpy or "未評価" }}</div>
   </article>
 </section>
 
@@ -100,7 +100,7 @@
       <li>実現損益: {{ analysis_run.portfolio_snapshots[-1].realized_pnl_jpy }}</li>
       <li>在庫評価変動: {{ analysis_run.portfolio_snapshots[-1].inventory_revaluation_jpy }}</li>
       <li>fees: {{ analysis_run.portfolio_snapshots[-1].fees_jpy }}</li>
-      <li>edge vs benchmark: {{ analysis_run.portfolio_snapshots[-1].edge_vs_benchmark_jpy }}</li>
+      <li>edge vs benchmark: {{ analysis_run.portfolio_snapshots[-1].edge_vs_benchmark_jpy or "未評価" }}</li>
     </ul>
   </div>
   <div class="panel">
@@ -220,11 +220,11 @@
   </article>
   <article>
     <h3>benchmark 比較</h3>
-    <div class="big">{{ analysis_window_run.portfolio_snapshots[-1].edge_vs_benchmark_jpy }}</div>
+    <div class="big">{{ analysis_window_run.portfolio_snapshots[-1].edge_vs_benchmark_jpy or "未評価" }}</div>
   </article>
   <article>
     <h3>trading edge</h3>
-    <div class="big">{{ analysis_window_run.portfolio_snapshots[-1].trading_edge_jpy }}</div>
+    <div class="big">{{ analysis_window_run.portfolio_snapshots[-1].trading_edge_jpy or "未評価" }}</div>
   </article>
 </section>
 
@@ -245,7 +245,7 @@
       <li>USD建て総資産: {{ analysis_window_run.portfolio_snapshots[-1].total_equity_usd or "未評価" }}</li>
       <li>実現損益: {{ analysis_window_run.portfolio_snapshots[-1].realized_pnl_jpy }}</li>
       <li>在庫評価変動: {{ analysis_window_run.portfolio_snapshots[-1].inventory_revaluation_jpy }}</li>
-      <li>edge vs benchmark: {{ analysis_window_run.portfolio_snapshots[-1].edge_vs_benchmark_jpy }}</li>
+      <li>edge vs benchmark: {{ analysis_window_run.portfolio_snapshots[-1].edge_vs_benchmark_jpy or "未評価" }}</li>
     </ul>
   </div>
   <div class="panel">
