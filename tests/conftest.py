@@ -8,7 +8,8 @@ from app.storage.settings import get_paths, load_settings, save_settings
 
 
 @pytest.fixture(autouse=True)
-def clean_app_state():
+def clean_app_state(tmp_path, monkeypatch):
+    monkeypatch.setattr("app.storage.settings.project_root", lambda: tmp_path)
     paths = get_paths()
     for path in (
         paths.imports,
