@@ -55,6 +55,16 @@
 </section>
 
 {% if run_data %}
+{% if run_data.warnings %}
+<section class="panel">
+  <h3>計算上の注意</h3>
+  <ul class="list">
+    {% for warning in run_data.warnings %}
+    <li>{{ warning }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
 <section class="summary-grid">
   <article>
     <h3>年</h3>
@@ -110,6 +120,16 @@
 {% endif %}
 
 {% if window_run_data %}
+{% if window_run_data.warnings %}
+<section class="panel">
+  <h3>期間集計の注意</h3>
+  <ul class="list">
+    {% for warning in window_run_data.warnings %}
+    <li>{{ warning }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
 <section class="summary-grid">
   <article>
     <h3>期間</h3>

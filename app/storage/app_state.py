@@ -89,6 +89,7 @@ def save_calc_run(result: CalculationRunResult) -> None:
         "audit_rows": result.audit_rows,
         "inventory_timeline": result.inventory_timeline,
         "source_transaction_count": result.source_transaction_count,
+        "warnings": result.warnings,
     }
     dump_json(_run_path(result.run_id), payload)
     index = load_json(_runs_index_path(), [])

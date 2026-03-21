@@ -22,7 +22,10 @@ def test_moving_average_calculation():
 
     assert result["yearly_summary"]["realized_pnl_jpy"] == 21500
     assert result["yearly_summary"]["misc_income_candidate_jpy"] == 41500
+    assert any("要確認取引が 2 件あります" in warning for warning in result["warnings"])
+    assert not any("保有数量がマイナス" in warning for warning in result["warnings"])
     run_data = load_latest_calc_run(method=CalculationMethod.MOVING_AVERAGE, year=2025)
+    assert run_data["warnings"] == result["warnings"]
     btc_row = next(row for row in run_data["asset_summaries"] if row["asset"] == "BTC")
     assert str(btc_row["ending_quantity"]) == "0.006"
 
@@ -33,8 +36,11 @@ def test_total_average_calculation():
 
     assert result["yearly_summary"]["realized_pnl_jpy"] == 21500
     assert result["yearly_summary"]["misc_income_candidate_jpy"] == 41500
+    assert any("要確認取引が 2 件あります" in warning for warning in result["warnings"])
+    assert not any("保有数量がマイナス" in warning for warning in result["warnings"])
     run_data = load_latest_calc_run(method=CalculationMethod.TOTAL_AVERAGE, year=2025)
     assert run_data["yearly_summary"]["year"] == 2025
+    assert run_data["warnings"] == result["warnings"]
 
 
 def test_calc_window_range_and_all_time():
@@ -51,6 +57,8 @@ def test_calc_window_range_and_all_time():
     assert range_result["aggregate_summary"]["realized_pnl_jpy"] == 21500
     assert range_result["aggregate_summary"]["misc_income_candidate_jpy"] == 41500
     assert range_result["aggregate_summary"]["scope_transaction_count"] == 5
+    assert any("要確認取引が 2 件あります" in warning for warning in range_result["warnings"])
+    assert not any("保有数量がマイナス" in warning for warning in range_result["warnings"])
     btc_row = next(row for row in range_result["asset_summaries"] if row["asset"] == "BTC")
     assert str(btc_row["opening_quantity"]) == "0"
     assert str(btc_row["ending_quantity"]) == "0.006"
@@ -61,6 +69,7 @@ def test_calc_window_range_and_all_time():
         end_year=2025,
     )
     assert latest["run_id"] == range_result["run_id"]
+    assert latest["warnings"] == range_result["warnings"]
 
     all_time_result = service.run_window(
         start_year=None,

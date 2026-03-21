@@ -123,6 +123,7 @@ class CalculationRunResult:
     audit_rows: list[dict[str, Any]]
     inventory_timeline: list[dict[str, Any]] = field(default_factory=list)
     source_transaction_count: int = 0
+    warnings: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)

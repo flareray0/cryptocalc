@@ -29,6 +29,7 @@ class CalcService:
         transactions = load_transactions()
         rate_table = self._load_rates(settings.get("manual_rate_file"))
         result = run_pnl_calculation(transactions, year, method, rate_table)
+        result.warnings = self._build_inventory_warnings(result.asset_summaries, result.yearly_summary)
         save_calc_run(result)
         self.audit.write_event(
             "calc_run",
@@ -39,6 +40,7 @@ class CalcService:
                 "transaction_count": result.source_transaction_count,
                 "review_required_count": len(result.review_required_transactions),
                 "realized_record_count": len(result.realized_records),
+                "warning_count": len(result.warnings),
             },
         )
         return {
@@ -49,6 +51,7 @@ class CalcService:
             "asset_summaries": result.asset_summaries,
             "audit_rows": result.audit_rows,
             "review_required_count": len(result.review_required_transactions),
+            "warnings": result.warnings,
         }
 
     def run_window(
@@ -120,6 +123,10 @@ class CalcService:
             "source_transaction_count": len(transactions),
             "review_required_count": review_required_count,
         }
+        payload["warnings"] = self._build_inventory_warnings(
+            payload["asset_summaries"],
+            payload["aggregate_summary"],
+        )
         save_calc_window_run(payload)
 
         settings["calc_window"]["default_start_year"] = resolved_start_year
@@ -138,6 +145,7 @@ class CalcService:
                 "source_transaction_count": len(transactions),
                 "review_required_count": review_required_count,
                 "year_count": len(payload["yearly_rows"]),
+                "warning_count": len(payload["warnings"]),
             },
         )
         return payload
@@ -379,3 +387,28 @@ class CalcService:
                         position["cost_basis_total_jpy"] / position["quantity"]
                     )
         return positions
+
+    def _build_inventory_warnings(self, asset_summaries: list[dict], summary: dict) -> list[str]:
+        warnings: list[str] = []
+        negative_assets = []
+        for row in asset_summaries:
+            opening = Decimal(str(row.get("opening_quantity", "0") or "0"))
+            ending = Decimal(str(row.get("ending_quantity", "0") or "0"))
+            if opening < ZERO or ending < ZERO:
+                negative_assets.append(row["asset"])
+
+        if negative_assets:
+            joined = ", ".join(sorted(negative_assets))
+            warnings.append(
+                f"保有数量がマイナスになっている銘柄があります: {joined}。"
+                " 期首残高・過去年の取引・外部入出庫が不足している可能性が高く、"
+                "この集計は参考値として扱ってください。"
+            )
+
+        review_count = int(summary.get("review_required_count") or 0)
+        if review_count > 0:
+            warnings.append(
+                f"要確認取引が {review_count} 件あります。"
+                " JPY未評価や重複疑いが多い場合、実現損益が大きくぶれることがあります。"
+            )
+        return warnings
