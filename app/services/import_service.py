@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app.calc.normalizer import merge_transactions
+from app.domain.enums import ImportSourceKind, TransactionType
 from app.integrations.rate_input_adapter import ManualRateTable
 from app.parsers.binance_japan_parser import BinanceJapanParser
 from app.parsers.manual_adjustment_parser import ManualAdjustmentParser
@@ -27,8 +28,12 @@ class ImportService:
         parser = self._select_parser(stored_path, import_kind)
         batch = parser.parse(stored_path)
         existing = load_transactions()
+        existing, suppressed_api_overlap_count = self._prefer_binance_csv_over_api(
+            existing=existing,
+            batch=batch,
+        )
         merged, duplicate_count = merge_transactions(existing, batch.transactions)
-        batch.duplicate_count = duplicate_count
+        batch.duplicate_count = duplicate_count + suppressed_api_overlap_count
         batch.audit_log_path = str(
             self.audit.write_jsonl(
                 "import_batch",
@@ -39,7 +44,8 @@ class ImportService:
                         "source_kind": batch.source_kind.value,
                         "transaction_count": batch.transaction_count,
                         "review_required_count": batch.review_required_count,
-                        "duplicate_count": duplicate_count,
+                        "duplicate_count": batch.duplicate_count,
+                        "suppressed_api_overlap_count": suppressed_api_overlap_count,
                         "detected_layout": batch.detected_layout,
                         "header_row_number": batch.header_row_number,
                         "unknown_column_names": batch.unknown_column_names,
@@ -82,3 +88,49 @@ class ImportService:
             if parser.can_parse(path):
                 return parser
         raise ValueError(f"対応していない入力形式です: {path.name}")
+
+    def _prefer_binance_csv_over_api(self, *, existing: list, batch) -> tuple[list, int]:
+        if batch.detected_layout not in {
+            "csv_japanese_balance_history",
+            "xlsx_japanese_balance_history_report",
+        }:
+            return existing, 0
+
+        trade_like_types = {
+            TransactionType.BUY,
+            TransactionType.SELL,
+            TransactionType.CRYPTO_SWAP,
+        }
+        batch_trade_rows = [tx for tx in batch.transactions if tx.tx_type in trade_like_types]
+        if not batch_trade_rows:
+            return existing, 0
+
+        timestamps = [tx.timestamp_utc or tx.timestamp_jst for tx in batch_trade_rows if tx.timestamp_utc or tx.timestamp_jst]
+        if not timestamps:
+            return existing, 0
+
+        pair_keys = {
+            (tx.base_asset or "", tx.quote_asset or "", tx.tx_type.value, tx.side.value)
+            for tx in batch_trade_rows
+        }
+        window_start = min(timestamps)
+        window_end = max(timestamps)
+
+        filtered = []
+        removed = 0
+        for tx in existing:
+            timestamp = tx.timestamp_utc or tx.timestamp_jst
+            pair_key = (tx.base_asset or "", tx.quote_asset or "", tx.tx_type.value, tx.side.value)
+            should_replace = (
+                tx.source_kind == ImportSourceKind.API
+                and tx.source_exchange == "binance_japan_api"
+                and tx.tx_type in trade_like_types
+                and timestamp is not None
+                and window_start <= timestamp <= window_end
+                and pair_key in pair_keys
+            )
+            if should_replace:
+                removed += 1
+                continue
+            filtered.append(tx)
+        return filtered, removed
