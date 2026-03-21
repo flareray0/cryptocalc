@@ -597,7 +597,7 @@ def ui_connect_binance_japan(
 
 @app.post("/ui/integrations/sync")
 def ui_sync_binance_japan(
-    symbols: str = Form(...),
+    symbols: str = Form(default=""),
     start_time_ms: str = Form(default=""),
     end_time_ms: str = Form(default=""),
 ):

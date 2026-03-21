@@ -32,7 +32,7 @@ class CalcWindowRunRequest(BaseModel):
 
 
 class BinanceSyncRequest(BaseModel):
-    symbols: list[str]
+    symbols: list[str] = Field(default_factory=list)
     start_time_ms: int | None = None
     end_time_ms: int | None = None
 

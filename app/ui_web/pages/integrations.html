@@ -6,6 +6,7 @@
     <p class="muted">read-only 権限を推奨だよ。API が不十分でも CSV import はそのまま使えるよ。</p>
     {% if sync_status.secret_saved %}
     <div class="notice">保存済みキーあり: {{ sync_status.api_key_hint }} / base_url={{ sync_status.base_url }}</div>
+    <div class="muted">保存済みキーはローカルに保持されるので、アプリを再起動しても再入力なしで同期できるよ。</div>
     {% endif %}
     <form action="/ui/integrations/connect" method="post">
       <label>API Key
@@ -27,7 +28,7 @@
     <h3>同期実行</h3>
     <form action="/ui/integrations/sync" method="post">
       <label>symbols
-        <input type="text" name="symbols" value="{{ sync_status.default_symbols or settings.binance_japan_api.default_symbols }}" placeholder="BTCJPY,ETHJPY,XRPBTC" required>
+        <input type="text" name="symbols" value="{{ sync_status.default_symbols or settings.binance_japan_api.default_symbols }}" placeholder="空欄なら保存済み設定、無ければ exchangeInfo から自動推定">
       </label>
       <label>start_time_ms
         <input type="text" name="start_time_ms" value="{{ sync_status.default_start_time_ms or settings.binance_japan_api.default_start_time_ms or '' }}" placeholder="任意">
@@ -50,6 +51,10 @@
     <div class="big">{{ "saved" if sync_status.secret_saved else "not saved" }}</div>
   </article>
   <article>
+    <h3>同期準備</h3>
+    <div class="big">{{ "ready" if sync_status.ready_to_sync else "not ready" }}</div>
+  </article>
+  <article>
     <h3>最終テスト</h3>
     <div class="big">{{ sync_status.last_tested_at or "未実施" }}</div>
   </article>
@@ -62,4 +67,14 @@
     <div class="big">{{ sync_status.last_sync_count or 0 }}</div>
   </article>
 </section>
+{% if sync_status.warnings %}
+<section class="panel">
+  <h3>同期時の注意</h3>
+  <ul>
+    {% for item in sync_status.warnings %}
+    <li>{{ item }}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
 {% endblock %}

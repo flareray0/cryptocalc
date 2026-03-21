@@ -61,11 +61,18 @@ class ExchangeSyncService:
 
     def sync(self, *, symbols: list[str], start_time_ms: int | None = None, end_time_ms: int | None = None) -> dict:
         client = self._client()
-        incoming = client.sync_transactions(
-            symbols=symbols,
+        settings = load_settings()
+        resolved_symbols, symbol_source = self._resolve_symbols(
+            requested_symbols=symbols,
+            saved_symbols=settings["binance_japan_api"].get("default_symbols", ""),
+            client=client,
+        )
+        sync_result = client.sync_transactions_with_meta(
+            symbols=resolved_symbols,
             start_time_ms=start_time_ms,
             end_time_ms=end_time_ms,
         )
+        incoming = sync_result["transactions"]
         existing = load_transactions()
         merged, duplicate_count = merge_transactions(existing, incoming)
         save_transactions(merged)
@@ -77,13 +84,15 @@ class ExchangeSyncService:
                 "last_error": None,
                 "last_sync_count": len(incoming),
                 "last_duplicate_count": duplicate_count,
-                "symbols": symbols,
+                "symbols": resolved_symbols,
                 "secret_saved": True,
+                "ready_to_sync": True,
+                "symbol_source": symbol_source,
+                "warnings": list(sync_result.get("warnings", [])),
             }
         )
         save_sync_status(status)
-        settings = load_settings()
-        settings["binance_japan_api"]["default_symbols"] = ",".join(symbols)
+        settings["binance_japan_api"]["default_symbols"] = ",".join(resolved_symbols)
         settings["binance_japan_api"]["default_start_time_ms"] = start_time_ms
         settings["binance_japan_api"]["default_end_time_ms"] = end_time_ms
         save_settings(settings)
@@ -91,17 +100,23 @@ class ExchangeSyncService:
             "api_sync",
             {
                 "timestamp": datetime.now().isoformat(),
-                "symbol_count": len(symbols),
+                "symbol_count": len(resolved_symbols),
+                "symbols": resolved_symbols,
+                "symbol_source": symbol_source,
                 "fetched_count": len(incoming),
                 "duplicate_count": duplicate_count,
                 "start_time_ms": start_time_ms,
                 "end_time_ms": end_time_ms,
+                "warning_count": len(sync_result.get("warnings", [])),
             },
         )
         return {
             "synced_count": len(incoming),
             "duplicate_count": duplicate_count,
             "last_synced_at": status["last_synced_at"],
+            "resolved_symbols": resolved_symbols,
+            "symbol_source": symbol_source,
+            "warnings": list(sync_result.get("warnings", [])),
         }
 
     def disconnect(self) -> None:
@@ -130,6 +145,7 @@ class ExchangeSyncService:
         merged = {
             **status,
             "secret_saved": bool(secret),
+            "ready_to_sync": bool(secret),
             "api_key_hint": self._mask_key(secret.get("api_key")) if secret else None,
             "base_url": (secret or {}).get("base_url") or settings["binance_japan_api"]["base_url"],
             "default_symbols": settings["binance_japan_api"].get("default_symbols", ""),
@@ -154,3 +170,18 @@ class ExchangeSyncService:
         if len(api_key) <= 8:
             return "*" * len(api_key)
         return f"{api_key[:4]}...{api_key[-4:]}"
+
+    def _resolve_symbols(self, *, requested_symbols: list[str], saved_symbols: str, client) -> tuple[list[str], str]:
+        normalized = [token.strip().upper() for token in requested_symbols if token and token.strip()]
+        if normalized:
+            return normalized, "request"
+
+        saved = [token.strip().upper() for token in str(saved_symbols or "").split(",") if token.strip()]
+        if saved:
+            return saved, "saved_default"
+
+        discovered = client.discover_symbols()
+        if discovered:
+            return discovered, "exchange_info"
+
+        raise ValueError("同期対象の symbols が空です。保存済み設定も見つからないため、少なくとも1回は symbols を指定してください。")

@@ -34,6 +34,10 @@ def test_saved_api_credentials_can_be_reused(monkeypatch):
     )
     assert reused["accountType"] == "SPOT"
 
+    restarted_state = ExchangeSyncService().connection_state()
+    assert restarted_state["secret_saved"] is True
+    assert restarted_state["ready_to_sync"] is True
+
 
 def test_binance_401_error_is_human_readable(monkeypatch):
     client = BinanceJapanApiClient(
@@ -63,3 +67,63 @@ def test_binance_401_error_is_human_readable(monkeypatch):
     assert "BTCJPY" in message
     assert "ABCD...5678" in message
     assert "接続解除して再保存" in message
+
+
+def test_binance_trade_sync_paginates_with_from_id(monkeypatch):
+    client = BinanceJapanApiClient(
+        api_key="ABCD1234EFGH5678",
+        api_secret="dummy-secret",
+        base_url="https://api.binance.com",
+    )
+
+    calls = []
+
+    def _fake_signed_get(path, params):
+        calls.append(params.copy())
+        from_id = params.get("fromId", 0)
+        if from_id == 0:
+            return [
+                {"id": 10, "time": 1000, "price": "100", "qty": "1", "quoteQty": "100", "commission": "0", "commissionAsset": "JPY", "isBuyer": True, "orderId": 1},
+                {"id": 11, "time": 2000, "price": "101", "qty": "1", "quoteQty": "101", "commission": "0", "commissionAsset": "JPY", "isBuyer": True, "orderId": 2},
+            ]
+        if from_id == 12:
+            return [
+                {"id": 12, "time": 3000, "price": "102", "qty": "1", "quoteQty": "102", "commission": "0", "commissionAsset": "JPY", "isBuyer": False, "orderId": 3},
+            ]
+        return []
+
+    monkeypatch.setattr(client, "_signed_get", _fake_signed_get)
+
+    rows = client._fetch_all_trades_by_from_id(symbol="BTCJPY", limit=2)
+    assert len(rows) == 3
+    assert [call.get("fromId", 0) for call in calls] == [0, 12]
+
+
+def test_sync_uses_saved_default_symbols_when_request_is_empty(monkeypatch):
+    class DummyClient:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def sync_transactions_with_meta(self, **kwargs):
+            return {"transactions": [], "resolved_symbols": kwargs["symbols"], "warnings": []}
+
+        def discover_symbols(self):
+            return ["BTCJPY", "ETHJPY"]
+
+    monkeypatch.setattr(
+        "app.services.exchange_sync_service.BinanceJapanApiClient",
+        DummyClient,
+    )
+
+    service = ExchangeSyncService()
+    service.secrets.save({"api_key": "demo-key", "api_secret": "demo-secret", "base_url": "https://api.binance.com"})
+
+    from app.storage.settings import load_settings, save_settings
+
+    settings = load_settings()
+    settings["binance_japan_api"]["default_symbols"] = "BTCJPY,ETHJPY"
+    save_settings(settings)
+
+    result = service.sync(symbols=[], start_time_ms=None, end_time_ms=None)
+    assert result["resolved_symbols"] == ["BTCJPY", "ETHJPY"]
+    assert result["symbol_source"] == "saved_default"

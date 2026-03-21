@@ -37,16 +37,32 @@ class BinanceJapanApiClient(ExchangeClientBase):
         self,
         *,
         symbol: str,
+        from_id: int | None = None,
         start_time_ms: int | None = None,
         end_time_ms: int | None = None,
         limit: int = 1000,
     ) -> list[dict]:
         params = {"symbol": symbol, "timestamp": self._timestamp(), "limit": limit}
+        if from_id is not None:
+            params["fromId"] = from_id
         if start_time_ms is not None:
             params["startTime"] = start_time_ms
         if end_time_ms is not None:
             params["endTime"] = end_time_ms
         return self._signed_get("/api/v3/myTrades", params)
+
+    def discover_symbols(self) -> list[str]:
+        payload = self.fetch_exchange_info()
+        discovered: list[str] = []
+        for row in payload.get("symbols", []):
+            symbol = row.get("symbol")
+            if not symbol:
+                continue
+            status = str(row.get("status") or "").upper()
+            if status and status != "TRADING":
+                continue
+            discovered.append(symbol)
+        return discovered
 
     def sync_transactions(
         self,
@@ -55,16 +71,104 @@ class BinanceJapanApiClient(ExchangeClientBase):
         start_time_ms: int | None = None,
         end_time_ms: int | None = None,
     ) -> list[NormalizedTransaction]:
+        return self.sync_transactions_with_meta(
+            symbols=symbols,
+            start_time_ms=start_time_ms,
+            end_time_ms=end_time_ms,
+        )["transactions"]
+
+    def sync_transactions_with_meta(
+        self,
+        *,
+        symbols: list[str],
+        start_time_ms: int | None = None,
+        end_time_ms: int | None = None,
+    ) -> dict[str, object]:
         symbol_map = self._symbol_map()
         rows: list[NormalizedTransaction] = []
+        warnings: list[str] = []
+        resolved_symbols: list[str] = []
         for symbol in symbols:
+            symbol = symbol.strip().upper()
+            if not symbol:
+                continue
+            resolved_symbols.append(symbol)
             base_asset, quote_asset = symbol_map.get(symbol, (None, None))
-            for row in self.fetch_my_trades(
+            page_rows, page_warning = self._fetch_my_trades_full_history(
                 symbol=symbol,
                 start_time_ms=start_time_ms,
                 end_time_ms=end_time_ms,
-            ):
+            )
+            if page_warning:
+                warnings.append(page_warning)
+            for row in page_rows:
                 rows.append(self._trade_to_tx(row, symbol, base_asset, quote_asset))
+        return {
+            "transactions": rows,
+            "resolved_symbols": resolved_symbols,
+            "warnings": warnings,
+        }
+
+    def _fetch_my_trades_full_history(
+        self,
+        *,
+        symbol: str,
+        start_time_ms: int | None,
+        end_time_ms: int | None,
+        limit: int = 1000,
+    ) -> tuple[list[dict], str | None]:
+        if start_time_ms is None and end_time_ms is None:
+            return self._fetch_all_trades_by_from_id(symbol=symbol, limit=limit), None
+
+        rows: list[dict] = []
+        warnings: list[str] = []
+        window_start = start_time_ms
+        window_end = end_time_ms
+
+        if window_start is None and window_end is not None:
+            window_start = max(0, window_end - 86_400_000 + 1)
+        if window_end is None and window_start is not None:
+            window_end = window_start + 86_400_000 - 1
+
+        cursor = window_start
+        final_end = window_end
+        while cursor is not None and final_end is not None and cursor <= final_end:
+            current_end = min(cursor + 86_400_000 - 1, final_end)
+            page = self.fetch_my_trades(
+                symbol=symbol,
+                start_time_ms=cursor,
+                end_time_ms=current_end,
+                limit=limit,
+            )
+            rows.extend(page)
+            if len(page) >= limit:
+                warnings.append(
+                    f"{symbol} は {cursor}-{current_end} の 24h 窓で {limit} 件に達しました。API仕様上、この時間帯は取りこぼしの可能性があります。CSV import を優先して確認してください。"
+                )
+            cursor = current_end + 1
+        warning = " ".join(warnings) if warnings else None
+        return rows, warning
+
+    def _fetch_all_trades_by_from_id(self, *, symbol: str, limit: int = 1000) -> list[dict]:
+        rows: list[dict] = []
+        from_id = 0
+        while True:
+            page = self.fetch_my_trades(symbol=symbol, from_id=from_id, limit=limit)
+            if not page:
+                break
+            rows.extend(page)
+            if len(page) < limit:
+                break
+            last_id = page[-1].get("id")
+            if last_id is None:
+                break
+            try:
+                next_from_id = int(last_id) + 1
+            except (TypeError, ValueError):
+                break
+            if next_from_id <= from_id:
+                break
+            from_id = next_from_id
         return rows
 
     def _symbol_map(self) -> dict[str, tuple[str | None, str | None]]:
