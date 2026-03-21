@@ -231,3 +231,61 @@ def test_binance_japan_parser_reads_empty_deposit_and_withdraw_history_csv(tmp_p
     assert withdraw_batch.detected_layout == "csv_withdraw_history"
     assert withdraw_batch.transaction_count == 0
     assert withdraw_batch.review_required_count == 0
+
+
+def test_binance_japan_parser_reads_fiat_deposit_and_withdraw_history_csv(tmp_path):
+    deposit = tmp_path / "binance_fiat_deposit_history.csv"
+    deposit.write_text(
+        "\n".join(
+            [
+                "時間,方法,入金額,受取金額,手数料,ステータス,取引ID",
+                "26-03-11 18:22:34,Bank Transfer (GMO),17198.00 JPY,17198 JPY,0.00 JPY,Successful,OF1",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    withdraw = tmp_path / "binance_fiat_withdraw_history.csv"
+    withdraw.write_text(
+        "\n".join(
+            [
+                "時間,方法,出金額,受取金額,手数料,ステータス,取引ID",
+                "26-03-11 18:17:16,Bank Transfer (GMO),102000.00 JPY,101850 JPY,150.00 JPY,Successful,WF1",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    deposit_batch = BinanceJapanParser().parse(deposit)
+    withdraw_batch = BinanceJapanParser().parse(withdraw)
+
+    assert deposit_batch.detected_layout == "csv_fiat_deposit_history"
+    assert deposit_batch.transaction_count == 1
+    assert deposit_batch.transactions[0].tx_type.value == "transfer_in"
+    assert deposit_batch.transactions[0].gross_amount_jpy == Decimal("17198")
+    assert withdraw_batch.detected_layout == "csv_fiat_withdraw_history"
+    assert withdraw_batch.transaction_count == 1
+    assert withdraw_batch.transactions[0].tx_type.value == "transfer_out"
+    assert withdraw_batch.transactions[0].gross_amount_jpy == Decimal("102000.00")
+    assert withdraw_batch.transactions[0].fee_jpy == Decimal("150.00")
+
+
+def test_binance_japan_parser_reads_empty_fiat_conversion_history_csv(tmp_path):
+    conversion = tmp_path / "binance_fiat_conversion_history.csv"
+    conversion.write_text(
+        "\n".join(
+            [
+                "方法,金額,価格,最終金額,作成日時,ステータス,取引ID",
+                "条件に一致するデータがありません。",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    batch = BinanceJapanParser().parse(conversion)
+
+    assert batch.detected_layout == "csv_fiat_conversion_history"
+    assert batch.transaction_count == 0
+    assert batch.review_required_count == 0

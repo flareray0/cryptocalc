@@ -133,3 +133,38 @@ def test_japanese_balance_history_import_replaces_overlapping_api_rows(tmp_path)
     assert len(merged) == 1
     assert merged[0].source_exchange == "binance_japan"
     assert merged[0].source_kind == ImportSourceKind.CSV
+
+
+def test_fiat_history_import_is_suppressed_when_authoritative_balance_history_exists(tmp_path):
+    authoritative = tmp_path / "jp_balance.csv"
+    authoritative.write_text(
+        "\n".join(
+            [
+                "ユーザーID,時間,アカウント,操作,コイン,変更,備考",
+                "1,25-07-17 09:18:07,Spot,Deposit,JPY,15000,",
+            ]
+        ),
+        encoding="utf-8-sig",
+    )
+    fiat_deposit = tmp_path / "fiat_deposit.csv"
+    fiat_deposit.write_text(
+        "\n".join(
+            [
+                "時間,方法,入金額,受取金額,手数料,ステータス,取引ID",
+                "25-07-17 09:18:08,Bank Transfer (GMO),15000.00 JPY,15000 JPY,0.00 JPY,Successful,OF1",
+            ]
+        ),
+        encoding="utf-8-sig",
+    )
+
+    first_batch = ImportService().import_file(Path(authoritative))
+    second_batch = ImportService().import_file(Path(fiat_deposit))
+    merged = load_transactions()
+
+    assert first_batch.detected_layout == "csv_japanese_balance_history"
+    assert second_batch.detected_layout == "csv_fiat_deposit_history"
+    assert second_batch.transaction_count == 0
+    assert second_batch.duplicate_count >= 1
+    assert len(merged) == 1
+    assert merged[0].source_exchange == "binance_japan"
+    assert merged[0].source_file == first_batch.source_file

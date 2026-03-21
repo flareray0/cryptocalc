@@ -10,7 +10,12 @@ from app.parsers.binance_japan_parser import BinanceJapanParser
 from app.parsers.manual_adjustment_parser import ManualAdjustmentParser
 from app.services.audit_service import AuditService
 from app.services.source_reconcile_service import (
+    AUTHORITATIVE_BINANCE_LAYOUTS,
+    SUPPLEMENTARY_BINANCE_LAYOUTS,
     build_authoritative_binance_windows,
+    build_binance_layout_source_files,
+    filter_incoming_binance_supplementary_transactions,
+    prune_existing_binance_transactions_by_source_files,
     prune_existing_api_transactions,
 )
 from app.storage.app_state import (
@@ -33,12 +38,25 @@ class ImportService:
         parser = self._select_parser(stored_path, import_kind)
         batch = parser.parse(stored_path)
         existing = load_transactions()
+        existing_import_batches = load_import_batches()
+        existing_windows = build_authoritative_binance_windows(
+            transactions=existing,
+            import_batches=existing_import_batches,
+        )
+        suppressed_supplementary_overlap_count = 0
+        if batch.detected_layout in SUPPLEMENTARY_BINANCE_LAYOUTS:
+            batch.transactions, suppressed_supplementary_overlap_count = filter_incoming_binance_supplementary_transactions(
+                incoming_transactions=batch.transactions,
+                windows=existing_windows,
+            )
+            batch.transaction_count = len(batch.transactions)
+            batch.review_required_count = sum(1 for tx in batch.transactions if tx.review_flag)
         existing, suppressed_api_overlap_count = self._prefer_binance_csv_over_api(
             existing=existing,
             batch=batch,
         )
         merged, duplicate_count = merge_transactions(existing, batch.transactions)
-        import_batches = load_import_batches() + [
+        import_batches = existing_import_batches + [
             {
                 "source_file": batch.source_file,
                 "detected_layout": batch.detected_layout,
@@ -52,9 +70,24 @@ class ImportService:
             transactions=merged,
             windows=windows,
         )
+        pruned_existing_supplementary_count = 0
+        if batch.detected_layout in AUTHORITATIVE_BINANCE_LAYOUTS:
+            supplementary_files = build_binance_layout_source_files(
+                import_batches=import_batches,
+                layouts=SUPPLEMENTARY_BINANCE_LAYOUTS,
+            )
+            merged, pruned_existing_supplementary_count = prune_existing_binance_transactions_by_source_files(
+                transactions=merged,
+                windows=windows,
+                source_files=supplementary_files,
+            )
         batch.duplicate_count = duplicate_count + suppressed_api_overlap_count
+        if suppressed_supplementary_overlap_count:
+            batch.duplicate_count += suppressed_supplementary_overlap_count
         if pruned_existing_api_count:
             batch.duplicate_count += pruned_existing_api_count
+        if pruned_existing_supplementary_count:
+            batch.duplicate_count += pruned_existing_supplementary_count
         batch.audit_log_path = str(
             self.audit.write_jsonl(
                 "import_batch",
@@ -66,8 +99,10 @@ class ImportService:
                         "transaction_count": batch.transaction_count,
                         "review_required_count": batch.review_required_count,
                         "duplicate_count": batch.duplicate_count,
+                        "suppressed_supplementary_overlap_count": suppressed_supplementary_overlap_count,
                         "suppressed_api_overlap_count": suppressed_api_overlap_count,
                         "pruned_existing_api_count": pruned_existing_api_count,
+                        "pruned_existing_supplementary_count": pruned_existing_supplementary_count,
                         "detected_layout": batch.detected_layout,
                         "header_row_number": batch.header_row_number,
                         "unknown_column_names": batch.unknown_column_names,

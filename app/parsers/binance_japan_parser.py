@@ -67,6 +67,36 @@ EXPECTED_COLUMNS_WITHDRAW_JP = [
     "ステータス",
 ]
 
+EXPECTED_COLUMNS_FIAT_DEPOSIT_JP = [
+    "時間",
+    "方法",
+    "入金額",
+    "受取金額",
+    "手数料",
+    "ステータス",
+    "取引ID",
+]
+
+EXPECTED_COLUMNS_FIAT_WITHDRAW_JP = [
+    "時間",
+    "方法",
+    "出金額",
+    "受取金額",
+    "手数料",
+    "ステータス",
+    "取引ID",
+]
+
+EXPECTED_COLUMNS_FIAT_CONVERSION_JP = [
+    "方法",
+    "金額",
+    "価格",
+    "最終金額",
+    "作成日時",
+    "ステータス",
+    "取引ID",
+]
+
 HEADER_SCAN_MAX_ROWS = 64
 NO_DATA_TEXT = "条件に一致するデータがありません。"
 
@@ -127,6 +157,29 @@ class BinanceJapanParser(BaseParser):
                 path,
                 rows,
                 tx_type=TransactionType.TRANSFER_OUT,
+                detected_layout=detected_layout,
+                header_row_number=header_row_number,
+            )
+        if detected_layout == "csv_fiat_deposit_history":
+            return self._parse_fiat_history(
+                path,
+                rows,
+                tx_type=TransactionType.TRANSFER_IN,
+                detected_layout=detected_layout,
+                header_row_number=header_row_number,
+            )
+        if detected_layout == "csv_fiat_withdraw_history":
+            return self._parse_fiat_history(
+                path,
+                rows,
+                tx_type=TransactionType.TRANSFER_OUT,
+                detected_layout=detected_layout,
+                header_row_number=header_row_number,
+            )
+        if detected_layout == "csv_fiat_conversion_history":
+            return self._parse_fiat_conversion_history(
+                path,
+                rows,
                 detected_layout=detected_layout,
                 header_row_number=header_row_number,
             )
@@ -216,6 +269,12 @@ class BinanceJapanParser(BaseParser):
             return "csv_japanese_balance_history"
         if set(EXPECTED_COLUMNS_SPOT_TRADE_JP).issubset(key_set):
             return "csv_spot_trade_history"
+        if set(EXPECTED_COLUMNS_FIAT_WITHDRAW_JP).issubset(key_set):
+            return "csv_fiat_withdraw_history"
+        if set(EXPECTED_COLUMNS_FIAT_DEPOSIT_JP).issubset(key_set):
+            return "csv_fiat_deposit_history"
+        if set(EXPECTED_COLUMNS_FIAT_CONVERSION_JP).issubset(key_set):
+            return "csv_fiat_conversion_history"
         if set(EXPECTED_COLUMNS_WITHDRAW_JP).issubset(key_set):
             return "csv_withdraw_history"
         if set(EXPECTED_COLUMNS_DEPOSIT_JP).issubset(key_set):
@@ -302,6 +361,66 @@ class BinanceJapanParser(BaseParser):
                 continue
             tx = self._row_to_transfer_tx(path, row_number, row, tx_type=tx_type)
             transactions.append(tx)
+
+        batch_id = self._batch_id(path)
+        return ImportBatchResult(
+            batch_id=batch_id,
+            source_file=path.name,
+            source_kind=self._source_kind(path),
+            transaction_count=len(transactions),
+            review_required_count=sum(1 for tx in transactions if tx.review_flag),
+            duplicate_count=0,
+            unknown_column_names=[],
+            unknown_tx_types=[],
+            transactions=transactions,
+            detected_layout=detected_layout,
+            header_row_number=header_row_number,
+        )
+
+    def _parse_fiat_history(
+        self,
+        path: Path,
+        rows: list[tuple[int, dict[str, Any]]],
+        *,
+        tx_type: TransactionType,
+        detected_layout: str | None = None,
+        header_row_number: int | None = None,
+    ) -> ImportBatchResult:
+        transactions: list[NormalizedTransaction] = []
+        for row_number, row in rows:
+            if self._is_no_data_row(row):
+                continue
+            tx = self._row_to_fiat_transfer_tx(path, row_number, row, tx_type=tx_type)
+            transactions.append(tx)
+
+        batch_id = self._batch_id(path)
+        return ImportBatchResult(
+            batch_id=batch_id,
+            source_file=path.name,
+            source_kind=self._source_kind(path),
+            transaction_count=len(transactions),
+            review_required_count=sum(1 for tx in transactions if tx.review_flag),
+            duplicate_count=0,
+            unknown_column_names=[],
+            unknown_tx_types=[],
+            transactions=transactions,
+            detected_layout=detected_layout,
+            header_row_number=header_row_number,
+        )
+
+    def _parse_fiat_conversion_history(
+        self,
+        path: Path,
+        rows: list[tuple[int, dict[str, Any]]],
+        *,
+        detected_layout: str | None = None,
+        header_row_number: int | None = None,
+    ) -> ImportBatchResult:
+        transactions: list[NormalizedTransaction] = []
+        for row_number, row in rows:
+            if self._is_no_data_row(row):
+                continue
+            transactions.append(self._row_to_unknown_fiat_conversion_tx(path, row_number, row))
 
         batch_id = self._batch_id(path)
         return ImportBatchResult(
@@ -564,6 +683,93 @@ class BinanceJapanParser(BaseParser):
             raw_payload={"source_rows": [row]},
             review_reasons=review_reasons,
             jpy_rate_source="file:transfer_jpy" if gross_amount_jpy is not None else None,
+        )
+
+    def _row_to_fiat_transfer_tx(
+        self,
+        path: Path,
+        row_number: int,
+        row: dict[str, Any],
+        *,
+        tx_type: TransactionType,
+    ) -> NormalizedTransaction:
+        timestamp_jst = self._parse_japanese_timestamp(str(row.get("時間") or ""))
+        timestamp_utc = timestamp_jst.astimezone(timezone.utc) if timestamp_jst is not None else None
+        gross_column = "入金額" if tx_type is TransactionType.TRANSFER_IN else "出金額"
+        gross_amount, gross_asset = self._parse_amount_with_asset(row.get(gross_column))
+        net_amount, net_asset = self._parse_amount_with_asset(row.get("受取金額"))
+        fee_amount, fee_asset = self._parse_amount_with_asset(row.get("手数料"))
+        review_reasons: list[str] = []
+        asset = gross_asset or net_asset or "JPY"
+        quantity = net_amount if tx_type is TransactionType.TRANSFER_IN else gross_amount
+        if asset != "JPY":
+            review_reasons.append("法定通貨履歴なのに JPY 以外が含まれています")
+        if quantity is None:
+            review_reasons.append("数量列の解析に失敗")
+        if fee_amount and fee_asset and fee_asset != "JPY":
+            review_reasons.append("手数料のJPY換算が未確定")
+        note_parts = [
+            f"method={row.get('方法') or ''}",
+            f"status={row.get('ステータス') or ''}",
+        ]
+        txid = str(row.get("取引ID") or "").strip()
+        if txid:
+            note_parts.append(f"txid={txid}")
+        if net_amount is not None and tx_type is TransactionType.TRANSFER_OUT:
+            note_parts.append(f"net_received_jpy={net_amount}")
+        return self._build_transaction(
+            path=path,
+            row_number=row_number,
+            timestamp_utc=timestamp_utc,
+            timestamp_jst=timestamp_jst,
+            tx_type=tx_type,
+            base_asset=asset,
+            quote_asset=None,
+            quantity=quantity,
+            quote_quantity=None,
+            unit_price_quote=None,
+            price_per_unit_jpy=Decimal("1") if quantity is not None else None,
+            gross_amount_jpy=quantity,
+            fee_asset="JPY" if fee_amount is not None else fee_asset,
+            fee_amount=fee_amount,
+            fee_jpy=fee_amount,
+            side=Side.NONE,
+            note="; ".join(part for part in note_parts if part),
+            raw_payload={"source_rows": [row]},
+            review_reasons=review_reasons,
+            jpy_rate_source="file:fiat_history_jpy",
+        )
+
+    def _row_to_unknown_fiat_conversion_tx(
+        self,
+        path: Path,
+        row_number: int,
+        row: dict[str, Any],
+    ) -> NormalizedTransaction:
+        timestamp_jst = self._parse_japanese_timestamp(str(row.get("作成日時") or ""))
+        timestamp_utc = timestamp_jst.astimezone(timezone.utc) if timestamp_jst is not None else None
+        amount, asset = self._parse_amount_with_asset(row.get("金額"))
+        return self._build_transaction(
+            path=path,
+            row_number=row_number,
+            timestamp_utc=timestamp_utc,
+            timestamp_jst=timestamp_jst,
+            tx_type=TransactionType.UNKNOWN,
+            base_asset=asset,
+            quote_asset=None,
+            quantity=amount,
+            quote_quantity=None,
+            unit_price_quote=None,
+            price_per_unit_jpy=None,
+            gross_amount_jpy=None,
+            fee_asset=None,
+            fee_amount=None,
+            fee_jpy=None,
+            side=Side.NONE,
+            note=f"fiat_method={row.get('方法') or ''}",
+            raw_payload={"source_rows": [row]},
+            review_reasons=["法定通貨による交換履歴の自動解釈は未対応のため要確認"],
+            jpy_rate_source=None,
         )
 
     def _is_japanese_balance_history_schema(self, row: dict[str, Any]) -> bool:

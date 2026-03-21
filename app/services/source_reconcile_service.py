@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.domain.models import NormalizedTransaction
 
@@ -11,12 +11,24 @@ AUTHORITATIVE_BINANCE_LAYOUTS = {
     "xlsx_japanese_balance_history_report",
 }
 
+SUPPLEMENTARY_BINANCE_LAYOUTS = {
+    "csv_spot_trade_history",
+    "csv_deposit_history",
+    "csv_withdraw_history",
+    "csv_fiat_deposit_history",
+    "csv_fiat_withdraw_history",
+    "csv_fiat_conversion_history",
+}
+
 
 @dataclass(slots=True)
 class AuthoritativeWindow:
     source_file: str
     start: datetime
     end: datetime
+
+
+AUTHORITATIVE_WINDOW_PADDING = timedelta(minutes=5)
 
 
 def _tx_timestamp(tx: NormalizedTransaction) -> datetime | None:
@@ -54,6 +66,15 @@ def build_authoritative_binance_windows(
     return windows
 
 
+def build_binance_layout_source_files(*, import_batches: list[dict], layouts: set[str]) -> set[str]:
+    files: set[str] = set()
+    for batch in import_batches:
+        source_file = batch.get("source_file")
+        if batch.get("detected_layout") in layouts and isinstance(source_file, str) and source_file:
+            files.add(source_file)
+    return files
+
+
 def filter_api_transactions_by_authoritative_windows(
     *,
     incoming_transactions: list[NormalizedTransaction],
@@ -69,7 +90,10 @@ def filter_api_transactions_by_authoritative_windows(
         covered = (
             tx.source_exchange == "binance_japan_api"
             and timestamp is not None
-            and any(window.start <= timestamp <= window.end for window in windows)
+            and any(
+                window.start - AUTHORITATIVE_WINDOW_PADDING <= timestamp <= window.end + AUTHORITATIVE_WINDOW_PADDING
+                for window in windows
+            )
         )
         if covered:
             removed += 1
@@ -93,7 +117,66 @@ def prune_existing_api_transactions(
         covered = (
             tx.source_exchange == "binance_japan_api"
             and timestamp is not None
-            and any(window.start <= timestamp <= window.end for window in windows)
+            and any(
+                window.start - AUTHORITATIVE_WINDOW_PADDING <= timestamp <= window.end + AUTHORITATIVE_WINDOW_PADDING
+                for window in windows
+            )
+        )
+        if covered:
+            removed += 1
+            continue
+        filtered.append(tx)
+    return filtered, removed
+
+
+def filter_incoming_binance_supplementary_transactions(
+    *,
+    incoming_transactions: list[NormalizedTransaction],
+    windows: list[AuthoritativeWindow],
+) -> tuple[list[NormalizedTransaction], int]:
+    if not windows:
+        return incoming_transactions, 0
+
+    filtered: list[NormalizedTransaction] = []
+    removed = 0
+    for tx in incoming_transactions:
+        timestamp = _tx_timestamp(tx)
+        covered = (
+            tx.source_exchange == "binance_japan"
+            and timestamp is not None
+            and any(
+                window.start - AUTHORITATIVE_WINDOW_PADDING <= timestamp <= window.end + AUTHORITATIVE_WINDOW_PADDING
+                for window in windows
+            )
+        )
+        if covered:
+            removed += 1
+            continue
+        filtered.append(tx)
+    return filtered, removed
+
+
+def prune_existing_binance_transactions_by_source_files(
+    *,
+    transactions: list[NormalizedTransaction],
+    windows: list[AuthoritativeWindow],
+    source_files: set[str],
+) -> tuple[list[NormalizedTransaction], int]:
+    if not windows or not source_files:
+        return transactions, 0
+
+    filtered: list[NormalizedTransaction] = []
+    removed = 0
+    for tx in transactions:
+        timestamp = _tx_timestamp(tx)
+        covered = (
+            tx.source_exchange == "binance_japan"
+            and tx.source_file in source_files
+            and timestamp is not None
+            and any(
+                window.start - AUTHORITATIVE_WINDOW_PADDING <= timestamp <= window.end + AUTHORITATIVE_WINDOW_PADDING
+                for window in windows
+            )
         )
         if covered:
             removed += 1
