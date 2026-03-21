@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import time
 from datetime import datetime, timezone
+from typing import Any, cast
 from urllib.parse import urlencode
 
 import httpx
@@ -25,13 +26,13 @@ class BinanceJapanApiClient(ExchangeClientBase):
             headers={"X-MBX-APIKEY": self.api_key},
         )
 
-    def test_connection(self) -> dict:
-        return self._signed_get("/api/v3/account", {"timestamp": self._timestamp()})
+    def test_connection(self) -> dict[str, Any]:
+        return cast(dict[str, Any], self._signed_get("/api/v3/account", {"timestamp": self._timestamp()}))
 
-    def fetch_exchange_info(self) -> dict:
+    def fetch_exchange_info(self) -> dict[str, Any]:
         response = self.client.get("/api/v3/exchangeInfo")
         response.raise_for_status()
-        return response.json()
+        return cast(dict[str, Any], response.json())
 
     def fetch_my_trades(
         self,
@@ -41,7 +42,7 @@ class BinanceJapanApiClient(ExchangeClientBase):
         start_time_ms: int | None = None,
         end_time_ms: int | None = None,
         limit: int = 1000,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         params = {"symbol": symbol, "timestamp": self._timestamp(), "limit": limit}
         if from_id is not None:
             params["fromId"] = from_id
@@ -49,7 +50,7 @@ class BinanceJapanApiClient(ExchangeClientBase):
             params["startTime"] = start_time_ms
         if end_time_ms is not None:
             params["endTime"] = end_time_ms
-        return self._signed_get("/api/v3/myTrades", params)
+        return cast(list[dict[str, Any]], self._signed_get("/api/v3/myTrades", params))
 
     def discover_symbols(self) -> list[str]:
         payload = self.fetch_exchange_info()
@@ -64,18 +65,16 @@ class BinanceJapanApiClient(ExchangeClientBase):
             discovered.append(symbol)
         return discovered
 
-    def sync_transactions(
-        self,
-        *,
-        symbols: list[str],
-        start_time_ms: int | None = None,
-        end_time_ms: int | None = None,
-    ) -> list[NormalizedTransaction]:
-        return self.sync_transactions_with_meta(
+    def sync_transactions(self, **kwargs: Any) -> list[NormalizedTransaction]:
+        symbols = cast(list[str], kwargs["symbols"])
+        start_time_ms = cast(int | None, kwargs.get("start_time_ms"))
+        end_time_ms = cast(int | None, kwargs.get("end_time_ms"))
+        result = self.sync_transactions_with_meta(
             symbols=symbols,
             start_time_ms=start_time_ms,
             end_time_ms=end_time_ms,
-        )["transactions"]
+        )
+        return cast(list[NormalizedTransaction], result["transactions"])
 
     def sync_transactions_with_meta(
         self,
@@ -83,7 +82,7 @@ class BinanceJapanApiClient(ExchangeClientBase):
         symbols: list[str],
         start_time_ms: int | None = None,
         end_time_ms: int | None = None,
-    ) -> dict[str, object]:
+    ) -> dict[str, Any]:
         symbol_map = self._symbol_map()
         rows: list[NormalizedTransaction] = []
         warnings: list[str] = []
@@ -115,9 +114,9 @@ class BinanceJapanApiClient(ExchangeClientBase):
             "warnings": warnings,
         }
 
-    def _aggregate_trade_rows(self, rows: list[dict]) -> list[dict]:
-        grouped: dict[tuple[int, bool], list[dict]] = {}
-        passthrough: list[dict] = []
+    def _aggregate_trade_rows(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        grouped: dict[tuple[int, bool], list[dict[str, Any]]] = {}
+        passthrough: list[dict[str, Any]] = []
         for row in rows:
             order_id = row.get("orderId")
             if order_id is None:
@@ -125,7 +124,7 @@ class BinanceJapanApiClient(ExchangeClientBase):
                 continue
             grouped.setdefault((int(order_id), bool(row.get("isBuyer"))), []).append(row)
 
-        aggregated: list[dict] = []
+        aggregated: list[dict[str, Any]] = []
         for _, group in grouped.items():
             if len(group) == 1:
                 aggregated.append(group[0])
@@ -168,11 +167,11 @@ class BinanceJapanApiClient(ExchangeClientBase):
         start_time_ms: int | None,
         end_time_ms: int | None,
         limit: int = 1000,
-    ) -> tuple[list[dict], str | None]:
+    ) -> tuple[list[dict[str, Any]], str | None]:
         if start_time_ms is None and end_time_ms is None:
             return self._fetch_all_trades_by_from_id(symbol=symbol, limit=limit), None
 
-        rows: list[dict] = []
+        rows: list[dict[str, Any]] = []
         warnings: list[str] = []
         window_start = start_time_ms
         window_end = end_time_ms
@@ -201,8 +200,8 @@ class BinanceJapanApiClient(ExchangeClientBase):
         warning = " ".join(warnings) if warnings else None
         return rows, warning
 
-    def _fetch_all_trades_by_from_id(self, *, symbol: str, limit: int = 1000) -> list[dict]:
-        rows: list[dict] = []
+    def _fetch_all_trades_by_from_id(self, *, symbol: str, limit: int = 1000) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
         from_id = 0
         while True:
             page = self.fetch_my_trades(symbol=symbol, from_id=from_id, limit=limit)
@@ -230,7 +229,7 @@ class BinanceJapanApiClient(ExchangeClientBase):
             mapping[row.get("symbol")] = (row.get("baseAsset"), row.get("quoteAsset"))
         return mapping
 
-    def _signed_get(self, path: str, params: dict) -> dict | list:
+    def _signed_get(self, path: str, params: dict[str, Any]) -> Any:
         query = urlencode(params, doseq=True)
         signature = hmac.new(self.api_secret, query.encode("utf-8"), hashlib.sha256).hexdigest()
         response = self.client.get(f"{path}?{query}&signature={signature}")
@@ -243,7 +242,7 @@ class BinanceJapanApiClient(ExchangeClientBase):
     def _timestamp(self) -> int:
         return int(time.time() * 1000)
 
-    def _format_http_error(self, exc: httpx.HTTPStatusError, path: str, params: dict) -> str:
+    def _format_http_error(self, exc: httpx.HTTPStatusError, path: str, params: dict[str, Any]) -> str:
         response = exc.response
         status_code = response.status_code
         detail = ""
@@ -284,7 +283,7 @@ class BinanceJapanApiClient(ExchangeClientBase):
 
     def _trade_to_tx(
         self,
-        row: dict,
+        row: dict[str, Any],
         symbol: str,
         base_asset: str | None,
         quote_asset: str | None,

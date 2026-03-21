@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 try:
-    JST = ZoneInfo("Asia/Tokyo")
+    JST: tzinfo = ZoneInfo("Asia/Tokyo")
 except ZoneInfoNotFoundError:
     # Windows + tzdata 未導入でも JST は固定オフセットで安全に扱える
     JST = timezone(timedelta(hours=9), name="JST")
@@ -61,8 +61,8 @@ def safe_slug(value: str) -> str:
 
 
 def serialize_payload(value: Any) -> Any:
-    if is_dataclass(value):
-        return serialize_payload(asdict(value))
+    if is_dataclass(value) and not isinstance(value, type):
+        return serialize_payload(asdict(cast(Any, value)))
     if isinstance(value, dict):
         return {k: serialize_payload(v) for k, v in value.items()}
     if isinstance(value, list):

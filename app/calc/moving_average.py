@@ -252,22 +252,22 @@ def calculate_moving_average(transactions: list, year: int, rate_lookup) -> Calc
     position_rows = sorted(positions.values(), key=lambda row: row.asset)
     asset_summaries = []
     for asset, stats in sorted(asset_stats.items()):
-        position = positions.get(asset)
+        position_row = positions.get(asset)
         asset_summaries.append(
             {
                 "asset": asset,
                 "acquired_quantity": stats["acquired_quantity"],
                 "disposed_quantity": stats["disposed_quantity"],
-                "ending_quantity": position.quantity if position else ZERO,
+                "ending_quantity": position_row.quantity if position_row else ZERO,
                 "realized_pnl_jpy": stats["realized_pnl_jpy"],
-                "average_cost_per_unit_jpy": position.avg_cost_per_unit_jpy if position else ZERO,
+                "average_cost_per_unit_jpy": position_row.avg_cost_per_unit_jpy if position_row else ZERO,
                 "acquired_cost_jpy": stats["acquired_cost_jpy"],
                 "proceeds_jpy": stats["proceeds_jpy"],
                 "fee_jpy": stats["fee_jpy"],
                 "reward_income_jpy": stats["reward_income_jpy"],
                 "transfer_in_quantity": stats["transfer_in_quantity"],
                 "transfer_out_quantity": stats["transfer_out_quantity"],
-                "unknown_cost_quantity": position.unknown_cost_quantity if position else ZERO,
+                "unknown_cost_quantity": position_row.unknown_cost_quantity if position_row else ZERO,
             }
         )
 

@@ -504,7 +504,7 @@ def _to_usd(value_jpy: Decimal | None, history: PriceHistory, timestamp: datetim
     if value_jpy is None:
         return None
     usd_jpy, _ = history.lookup_usd_jpy(timestamp)
-    if usd_jpy in (None, ZERO):
+    if usd_jpy is None or usd_jpy == ZERO:
         review_notes.add("USD換算レートが無いためUSD建て分析は一部未評価です")
         return None
     return value_jpy / usd_jpy
@@ -690,6 +690,10 @@ def _build_attribution_rows(
     rows: list[PnlAttributionSnapshot] = []
     previous = portfolio_snapshots[0]
     for current in ordered:
+        current_ts = current.timestamp
+        if current_ts is None:
+            previous = current
+            continue
         delta_v_jpy = (current.total_equity_jpy or ZERO) - (previous.total_equity_jpy or ZERO)
         realized_delta_jpy = (current.realized_pnl_jpy or ZERO) - (previous.realized_pnl_jpy or ZERO)
         fees_delta_jpy = (current.fees_jpy or ZERO) - (previous.fees_jpy or ZERO)
@@ -703,28 +707,28 @@ def _build_attribution_rows(
             edge_delta_jpy = (current.edge_vs_benchmark_jpy or ZERO) - (previous.edge_vs_benchmark_jpy or ZERO)
         rows.append(
             PnlAttributionSnapshot(
-                period_label=current.timestamp.strftime("%Y-%m"),
+                period_label=current_ts.strftime("%Y-%m"),
                 period_start=previous.timestamp,
-                period_end=current.timestamp,
+                period_end=current_ts,
                 delta_v_jpy=quantize_jpy(delta_v_jpy),
-                delta_v_usd=quantize_jpy(_to_usd(delta_v_jpy, history, current.timestamp, review_notes)),
+                delta_v_usd=quantize_jpy(_to_usd(delta_v_jpy, history, current_ts, review_notes)),
                 realized_pnl_jpy=quantize_jpy(realized_delta_jpy),
-                realized_pnl_usd=quantize_jpy(_to_usd(realized_delta_jpy, history, current.timestamp, review_notes)),
+                realized_pnl_usd=quantize_jpy(_to_usd(realized_delta_jpy, history, current_ts, review_notes)),
                 unrealized_pnl_jpy=current.unrealized_pnl_jpy,
                 unrealized_pnl_usd=current.unrealized_pnl_usd,
                 inventory_revaluation_jpy=quantize_jpy(inventory_delta_jpy),
                 inventory_revaluation_usd=quantize_jpy(
-                    _to_usd(inventory_delta_jpy, history, current.timestamp, review_notes)
+                    _to_usd(inventory_delta_jpy, history, current_ts, review_notes)
                 ),
                 fees_jpy=quantize_jpy(fees_delta_jpy),
-                fees_usd=quantize_jpy(_to_usd(fees_delta_jpy, history, current.timestamp, review_notes)),
+                fees_usd=quantize_jpy(_to_usd(fees_delta_jpy, history, current_ts, review_notes)),
                 slippage_jpy=quantize_jpy(slippage_delta_jpy),
-                slippage_usd=quantize_jpy(_to_usd(slippage_delta_jpy, history, current.timestamp, review_notes)),
+                slippage_usd=quantize_jpy(_to_usd(slippage_delta_jpy, history, current_ts, review_notes)),
                 funding_jpy=quantize_jpy(funding_delta_jpy),
-                funding_usd=quantize_jpy(_to_usd(funding_delta_jpy, history, current.timestamp, review_notes)),
+                funding_usd=quantize_jpy(_to_usd(funding_delta_jpy, history, current_ts, review_notes)),
                 edge_vs_benchmark_jpy=quantize_jpy(edge_delta_jpy),
                 edge_vs_benchmark_usd=quantize_jpy(
-                    _to_usd(edge_delta_jpy, history, current.timestamp, review_notes)
+                    _to_usd(edge_delta_jpy, history, current_ts, review_notes)
                 ),
             )
         )

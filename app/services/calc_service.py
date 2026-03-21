@@ -4,12 +4,14 @@ from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from app.calc.inventory_engine import resolve_transaction_flow
 from app.calc.normalizer import sort_transactions
 from app.calc.pnl_engine import run_pnl_calculation
 from app.domain.enums import CalculationMethod, TransactionType
+from app.domain.models import CalculationRunResult
 from app.integrations.rate_input_adapter import ManualRateTable
 from app.services.audit_service import AuditService
 from app.storage.app_state import load_transactions, save_calc_run
@@ -74,7 +76,7 @@ class CalcService:
         )
         rate_table = self._load_rates(settings.get("manual_rate_file"))
 
-        yearly_results = [
+        yearly_results: list[CalculationRunResult] = [
             run_pnl_calculation(transactions, year, method, rate_table)
             for year in range(resolved_start_year, resolved_end_year + 1)
         ]
@@ -97,7 +99,7 @@ class CalcService:
             rate_table=rate_table,
         )
         generated_at = datetime.now().isoformat()
-        payload = {
+        payload: dict[str, Any] = {
             "run_id": f"calc_window_{method.value}_{resolved_start_year}_{resolved_end_year}_{uuid4().hex[:10]}",
             "method": method.value,
             "start_year": resolved_start_year,
@@ -195,7 +197,7 @@ class CalcService:
     def _aggregate_window_summary(
         self,
         *,
-        yearly_results: list,
+        yearly_results: list[CalculationRunResult],
         start_year: int,
         end_year: int,
         generated_at: str,
@@ -231,13 +233,12 @@ class CalcService:
     def _aggregate_asset_summaries(
         self,
         *,
-        yearly_results: list,
+        yearly_results: list[CalculationRunResult],
         opening_positions: dict[str, dict[str, Decimal]],
         ending_positions: dict[str, dict[str, Decimal]],
     ) -> list[dict]:
-        aggregated: dict[str, dict[str, Decimal | str | None]] = defaultdict(
+        aggregated: dict[str, dict[str, Decimal]] = defaultdict(
             lambda: {
-                "asset": None,
                 "acquired_quantity": ZERO,
                 "disposed_quantity": ZERO,
                 "acquired_cost_jpy": ZERO,
@@ -254,7 +255,6 @@ class CalcService:
             for row in result.asset_summaries:
                 asset = row["asset"]
                 target = aggregated[asset]
-                target["asset"] = asset
                 for field_name in (
                     "acquired_quantity",
                     "disposed_quantity",
@@ -276,7 +276,6 @@ class CalcService:
             target = aggregated.get(
                 asset,
                 {
-                    "asset": asset,
                     "acquired_quantity": ZERO,
                     "disposed_quantity": ZERO,
                     "acquired_cost_jpy": ZERO,

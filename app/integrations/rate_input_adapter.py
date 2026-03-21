@@ -40,7 +40,8 @@ class RateInputAdapter:
                     except ValueError:
                         date_key = None
                 else:
-                    date_key = utc_to_jst(ts).date().isoformat() if ts else None
+                    jst_ts = utc_to_jst(ts) if ts else None
+                    date_key = jst_ts.date().isoformat() if jst_ts else None
                 rows.append(
                     RateRow(
                         asset=asset,
@@ -62,7 +63,10 @@ class RateInputAdapter:
                     break
             if exact:
                 return exact.jpy_rate, exact.source
-            date_key = utc_to_jst(timestamp).date().isoformat()
+            jst_timestamp = utc_to_jst(timestamp)
+            if jst_timestamp is None:
+                return None, None
+            date_key = jst_timestamp.date().isoformat()
             for row in self._rows:
                 if row.asset == asset and row.date_key == date_key:
                     return row.jpy_rate, f"{row.source}:date"

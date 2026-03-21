@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
+from typing import Any
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -16,6 +18,7 @@ from app.api.routes_import import router as import_router
 from app.api.routes_reports import router as reports_router
 from app.api.routes_settings import router as settings_router
 from app.domain.enums import CalculationMethod
+from app.domain.models import NormalizedTransaction
 from app.services.analysis_service import AnalysisService
 from app.services.calc_service import CalcService
 from app.services.exchange_sync_service import ExchangeSyncService
@@ -77,7 +80,7 @@ async def generic_error_handler(request: Request, exc: Exception):
     )
 
 
-def _available_years(transactions) -> list[int]:
+def _available_years(transactions: Iterable[NormalizedTransaction]) -> list[int]:
     years = {
         tx.timestamp_jst.year
         for tx in transactions
@@ -86,7 +89,7 @@ def _available_years(transactions) -> list[int]:
     return sorted(years, reverse=True)
 
 
-def _as_number(value):
+def _as_number(value: Any) -> float | None:
     if value in (None, ""):
         return None
     try:
@@ -95,7 +98,7 @@ def _as_number(value):
         return None
 
 
-def _line_chart_from_rows(rows, value_key: str, title: str, color: str = "#0f766e") -> str:
+def _line_chart_from_rows(rows: list[dict[str, Any]], value_key: str, title: str, color: str = "#0f766e") -> str:
     values = [_as_number(row.get(value_key)) for row in rows]
     return build_line_chart(
         [{"label": value_key, "values": values, "color": color}],
@@ -103,15 +106,19 @@ def _line_chart_from_rows(rows, value_key: str, title: str, color: str = "#0f766
     )
 
 
-def _multi_line_chart(rows, series_defs, title: str) -> str:
-    series = []
+def _multi_line_chart(
+    rows: list[dict[str, Any]],
+    series_defs: list[tuple[str, str, str]],
+    title: str,
+) -> str:
+    series: list[dict[str, Any]] = []
     for label, value_key, color in series_defs:
         values = [_as_number(row.get(value_key)) for row in rows]
         series.append({"label": label, "values": values, "color": color})
     return build_line_chart(series, title=title)
 
 
-def _analysis_summary(analysis_run: dict | None) -> dict | None:
+def _analysis_summary(analysis_run: dict[str, Any] | None) -> dict[str, Any] | None:
     if not analysis_run:
         return None
     snapshots = analysis_run.get("portfolio_snapshots", [])
@@ -124,23 +131,26 @@ def _analysis_summary(analysis_run: dict | None) -> dict | None:
     }
 
 
-def _build_analysis_view_data(analysis_run: dict | None) -> dict:
-    snapshots = analysis_run.get("portfolio_snapshots", []) if analysis_run else []
-    asset_quantity_rows = analysis_run.get("asset_quantity_history", []) if analysis_run else []
-    top_symbols = []
+def _build_analysis_view_data(analysis_run: dict[str, Any] | None) -> dict[str, str]:
+    snapshots: list[dict[str, Any]] = analysis_run.get("portfolio_snapshots", []) if analysis_run else []
+    asset_quantity_rows: list[dict[str, Any]] = analysis_run.get("asset_quantity_history", []) if analysis_run else []
+    top_symbols: list[str] = []
     if asset_quantity_rows:
-        totals = {}
+        totals: dict[str, float] = {}
         for row in asset_quantity_rows:
             value = _as_number(row.get("market_value_jpy")) or 0
-            totals[row["symbol"]] = max(value, totals.get(row["symbol"], 0))
-        top_symbols = sorted(totals, key=totals.get, reverse=True)[:5]
-    asset_series_rows = []
+            symbol = str(row["symbol"])
+            totals[symbol] = max(value, totals.get(symbol, 0))
+        top_symbols = sorted(totals, key=lambda symbol: totals[symbol], reverse=True)[:5]
+    asset_series_rows: list[dict[str, Any]] = []
     if top_symbols and analysis_run:
-        by_timestamp = {}
+        by_timestamp: dict[str, dict[str, Any]] = {}
         for row in asset_quantity_rows:
-            if row["symbol"] not in top_symbols:
+            symbol = str(row["symbol"])
+            if symbol not in top_symbols:
                 continue
-            by_timestamp.setdefault(row["timestamp"], {})[row["symbol"]] = row["quantity"]
+            timestamp_key = "" if row.get("timestamp") is None else str(row["timestamp"])
+            by_timestamp.setdefault(timestamp_key, {})[symbol] = row["quantity"]
         asset_series_rows = [
             {symbol: by_timestamp[timestamp].get(symbol) for symbol in top_symbols}
             for timestamp in sorted(by_timestamp)
@@ -186,7 +196,7 @@ def _build_analysis_view_data(analysis_run: dict | None) -> dict:
     }
 
 
-def _base_context(request: Request, title: str, **extra):
+def _base_context(request: Request, title: str, **extra: Any) -> dict[str, Any]:
     txs = load_transactions()
     review_count = sum(1 for tx in txs if tx.review_flag)
     source_counts: dict[str, int] = {}
@@ -522,19 +532,19 @@ def ui_calc_run_window(
             method=CalculationMethod(method),
         )
     except Exception as exc:
-        params = {"method": method, "error": str(exc)}
+        params: dict[str, str] = {"method": method, "error": str(exc)}
         if parsed_start_year is not None:
-            params["start_year"] = parsed_start_year
+            params["start_year"] = str(parsed_start_year)
         if parsed_end_year is not None:
-            params["end_year"] = parsed_end_year
+            params["end_year"] = str(parsed_end_year)
         return RedirectResponse(f"/calc?{urlencode(params)}", status_code=303)
 
-    params = {"method": method, "message": "期間集計を実行しました"}
+    success_params: dict[str, str] = {"method": method, "message": "期間集計を実行しました"}
     if parsed_start_year is not None:
-        params["start_year"] = parsed_start_year
+        success_params["start_year"] = str(parsed_start_year)
     if parsed_end_year is not None:
-        params["end_year"] = parsed_end_year
-    return RedirectResponse(f"/calc?{urlencode(params)}", status_code=303)
+        success_params["end_year"] = str(parsed_end_year)
+    return RedirectResponse(f"/calc?{urlencode(success_params)}", status_code=303)
 
 
 @app.post("/ui/analysis/run")
@@ -572,19 +582,19 @@ def ui_analysis_run_window(
             method_reference=CalculationMethod(method_reference),
         )
     except Exception as exc:
-        params = {"method_reference": method_reference, "error": str(exc)}
+        params: dict[str, str] = {"method_reference": method_reference, "error": str(exc)}
         if parsed_start_year is not None:
-            params["start_year"] = parsed_start_year
+            params["start_year"] = str(parsed_start_year)
         if parsed_end_year is not None:
-            params["end_year"] = parsed_end_year
+            params["end_year"] = str(parsed_end_year)
         return RedirectResponse(f"/analysis?{urlencode(params)}", status_code=303)
 
-    params = {"method_reference": method_reference, "message": "期間分析を実行しました"}
+    success_params: dict[str, str] = {"method_reference": method_reference, "message": "期間分析を実行しました"}
     if parsed_start_year is not None:
-        params["start_year"] = parsed_start_year
+        success_params["start_year"] = str(parsed_start_year)
     if parsed_end_year is not None:
-        params["end_year"] = parsed_end_year
-    return RedirectResponse(f"/analysis?{urlencode(params)}", status_code=303)
+        success_params["end_year"] = str(parsed_end_year)
+    return RedirectResponse(f"/analysis?{urlencode(success_params)}", status_code=303)
 
 
 @app.post("/ui/integrations/connect")

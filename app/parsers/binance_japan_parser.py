@@ -112,7 +112,7 @@ class BinanceJapanParser(BaseParser):
             return [], "xlsx_unknown_layout", None
 
         active_columns = [(index, header) for index, header in enumerate(headers) if header]
-        rows: list[tuple[int, dict[str, Any]]] = []
+        xlsx_rows: list[tuple[int, dict[str, Any]]] = []
         for row_number, cells in enumerate(ws.iter_rows(min_row=header_row_number + 1, values_only=True), start=header_row_number + 1):
             if not active_columns:
                 continue
@@ -122,8 +122,8 @@ class BinanceJapanParser(BaseParser):
                 header: cells[index] if index < len(cells) else None
                 for index, header in active_columns
             }
-            rows.append((row_number, row))
-        return rows, detected_layout, header_row_number
+            xlsx_rows.append((row_number, row))
+        return xlsx_rows, detected_layout, header_row_number
 
     def _detect_xlsx_header(self, worksheet: Any) -> tuple[int, list[str], str]:
         fallback_header: list[str] | None = None
