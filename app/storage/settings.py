@@ -16,6 +16,7 @@ def project_root() -> Path:
 @dataclass(slots=True)
 class AppPaths:
     root: Path
+    data: Path
     app_data: Path
     imports: Path
     calc_runs: Path
@@ -67,6 +68,7 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
 
 def get_paths() -> AppPaths:
     root = project_root()
+    data = root / "data"
     storage_root = root / "app" / "storage"
     app_data = storage_root / "app_data"
     imports = app_data / "imports"
@@ -75,10 +77,11 @@ def get_paths() -> AppPaths:
     exports = root / "exports"
     samples = root / "samples"
     secrets = storage_root / "secrets"
-    for path in (app_data, imports, calc_runs, logs, exports, samples, secrets):
+    for path in (data, app_data, imports, calc_runs, logs, exports, samples, secrets):
         path.mkdir(parents=True, exist_ok=True)
     return AppPaths(
         root=root,
+        data=data,
         app_data=app_data,
         imports=imports,
         calc_runs=calc_runs,

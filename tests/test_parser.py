@@ -9,6 +9,8 @@ from openpyxl import Workbook
 
 from app.parsers.binance_japan_parser import BinanceJapanParser
 
+SAMPLES_DIR = Path(__file__).resolve().parents[1] / "samples"
+
 
 def _force_sheet_dimension_to_a1(path: Path) -> None:
     temp_path = path.with_suffix(".tmp.xlsx")
@@ -25,7 +27,7 @@ def _force_sheet_dimension_to_a1(path: Path) -> None:
 
 def test_binance_japan_parser_reads_sample():
     parser = BinanceJapanParser()
-    sample = Path(r"H:\cryptocalc\samples\binance_japan_sample.csv")
+    sample = SAMPLES_DIR / "binance_japan_sample.csv"
     batch = parser.parse(sample)
 
     assert batch.transaction_count == 4

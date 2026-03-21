@@ -75,6 +75,12 @@ def reset_imported_data():
     }
 
 
+@router.post("/import/data-folder")
+def import_data_folder():
+    service = ImportService()
+    return service.import_data_directory(get_paths().data)
+
+
 @router.get("/transactions")
 def list_transactions(
     year: int | None = None,

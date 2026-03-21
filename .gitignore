@@ -13,6 +13,9 @@ exports/
 app/storage/app_data/
 app/storage/logs/
 app/storage/secrets/
+data/*
+!data/.gitkeep
+!data/README.md
 
 # IDE / OS
 .DS_Store

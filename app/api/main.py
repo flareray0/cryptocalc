@@ -281,7 +281,7 @@ def import_page(request: Request):
     return templates.TemplateResponse(
         request,
         "import.html",
-        _base_context(request, "ファイル取込"),
+        _base_context(request, "ファイル取込", data_dir=str(get_paths().data)),
     )
 
 
@@ -523,6 +523,25 @@ def ui_import_reset():
             "message": (
                 "取引データをリセットしました。"
                 f" transactions={removed['transactions']}, import_batches={removed['import_batches']}"
+            )
+        }
+    )
+    return RedirectResponse(f"/import?{params}", status_code=303)
+
+
+@app.post("/ui/import/data-folder")
+def ui_import_data_folder():
+    service = ImportService()
+    try:
+        result = service.import_data_directory(get_paths().data)
+    except Exception as exc:
+        return RedirectResponse(f"/import?error={str(exc)}", status_code=303)
+    params = urlencode(
+        {
+            "message": (
+                "data フォルダを一括取り込みしました。"
+                f" files={result['imported_file_count']}/{result['scanned_file_count']},"
+                f" errors={result['error_count']}"
             )
         }
     )

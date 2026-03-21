@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from app.calc.normalizer import merge_transactions
 from app.domain.enums import ImportSourceKind, TransactionType
@@ -131,12 +132,84 @@ class ImportService:
         )
         return {"source_file": stored_path.name, "row_count": len(table.rows)}
 
+    def import_data_directory(self, data_root: Path | None = None) -> dict[str, Any]:
+        root = (data_root or self.paths.data).resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        supported_suffixes = {".csv", ".xlsx", ".xlsm"}
+        files = [
+            path
+            for path in root.rglob("*")
+            if path.is_file() and path.suffix.lower() in supported_suffixes
+        ]
+        ordered_files = sorted(files, key=self._data_import_sort_key)
+
+        imported_files: list[dict[str, Any]] = []
+        errors: list[dict[str, str]] = []
+        for path in ordered_files:
+            category = self._data_import_category(path)
+            try:
+                if category == "manual_rate":
+                    result = self.import_manual_rate_file(path)
+                    imported_files.append(
+                        {
+                            "path": str(path.relative_to(root)),
+                            "category": category,
+                            "source_file": result["source_file"],
+                            "row_count": result["row_count"],
+                        }
+                    )
+                else:
+                    batch = self.import_file(
+                        path,
+                        import_kind="manual_adjustment" if category == "manual_adjustment" else None,
+                    )
+                    imported_files.append(
+                        {
+                            "path": str(path.relative_to(root)),
+                            "category": category,
+                            "source_file": batch.source_file,
+                            "transaction_count": batch.transaction_count,
+                            "review_required_count": batch.review_required_count,
+                            "duplicate_count": batch.duplicate_count,
+                            "detected_layout": batch.detected_layout,
+                        }
+                    )
+            except Exception as exc:
+                errors.append({"path": str(path.relative_to(root)), "error": str(exc)})
+
+        return {
+            "data_dir": str(root),
+            "scanned_file_count": len(ordered_files),
+            "imported_file_count": len(imported_files),
+            "error_count": len(errors),
+            "imported_files": imported_files,
+            "errors": errors,
+        }
+
     def _copy_to_imports(self, source_path: Path) -> Path:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         target = self.paths.imports / f"{stamp}_{source_path.name}"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(source_path.read_bytes())
         return target
+
+    def _data_import_category(self, path: Path) -> str:
+        parts = [part.lower() for part in path.parts]
+        name = path.name.lower()
+        if any(part in {"manual_rates", "rates", "rate"} for part in parts) or "manual_rate" in name or "rate" in name or "レート" in path.name:
+            return "manual_rate"
+        if any(part in {"manual_adjustments", "adjustments", "adjustment"} for part in parts) or "manual_adjust" in name or "adjustment" in name or "補正" in path.name:
+            return "manual_adjustment"
+        return "exchange_history"
+
+    def _data_import_sort_key(self, path: Path) -> tuple[int, str]:
+        category = self._data_import_category(path)
+        priority = {
+            "exchange_history": 0,
+            "manual_adjustment": 1,
+            "manual_rate": 2,
+        }.get(category, 9)
+        return (priority, str(path).lower())
 
     def _select_parser(self, path: Path, import_kind: str | None):
         if import_kind == "manual_adjustment":

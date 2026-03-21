@@ -61,6 +61,7 @@ H:\cryptocalc\
   ├─ tests\
   ├─ logs\
   ├─ samples\
+  ├─ data\
   ├─ exports\
   ├─ README.md
   ├─ requirements.txt
@@ -125,6 +126,19 @@ H:\cryptocalc\
 - `jpy_rate`
 - `source`
 
+### 4. `data` フォルダ一括取込
+- `H:\cryptocalc\data\` 配下を再帰走査して、`csv / xlsx / xlsm` をまとめて取り込めます
+- おすすめ構成:
+  - `data/exchange/` に Binance 履歴
+  - `data/manual_adjustments/` に手動補正 CSV
+  - `data/manual_rates/` に JPY 補完レート CSV
+- 判定ルール:
+  - パスやファイル名に `manual_adjustments` / `adjustments` / `補正` を含むものは手動補正
+  - パスやファイル名に `manual_rates` / `rates` / `レート` を含むものは JPY 補完レート
+  - それ以外は通常の取引履歴として扱います
+- `data` 配下の実データは `.gitignore` 対象で、git へは含めません
+- 元ファイルは read-only import のままで、上書きしません
+
 ## 対応取引種別
 - 購入
 - 売却
@@ -174,6 +188,7 @@ H:\cryptocalc\
 - `POST /api/v1/import/csv`
 - `POST /api/v1/import/manual-adjustments`
 - `POST /api/v1/import/manual-rates`
+- `POST /api/v1/import/data-folder`
 - `GET /api/v1/transactions`
 - `GET /api/v1/transactions/review-required`
 
@@ -359,13 +374,14 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 ## 使い方
 1. `ファイル取込` 画面で Binance Japan CSV / XLSX を読み込む
-2. 必要なら `手動補正 CSV` と `JPY 補完レート CSV` を読み込む
-3. `計算結果` 画面で年度と方式を選んで計算する
-4. `分析` 画面で年度と参照方式を選び、総資産 / benchmark / edge を確認する
-5. `分析` 画面で `累計入金 / 累計出金 / 純入金 / 出金してなかったら / 純入金差引後` を見て、生活側の出し入れを考慮した感覚と突き合わせる
-6. 必要なら `現在残高照合` を実行して、Binance 現在残高ベース総資産と履歴再構築残高の差を確認する
-7. `要確認` 画面で未知 / 未評価 / 重複疑いを確認する
-8. `エクスポート` 画面で年次 CSV / 国税庁補助 CSV / Excel / 分析 CSV / JSON を生成する
+2. まとめて入れたい時は `H:\cryptocalc\data\` 配下へファイルを置いて、`data フォルダを一括取込` を押す
+3. 必要なら `手動補正 CSV` と `JPY 補完レート CSV` を個別に読み込む
+4. `計算結果` 画面で年度と方式を選んで計算する
+5. `分析` 画面で年度と参照方式を選び、総資産 / benchmark / edge を確認する
+6. `分析` 画面で `累計入金 / 累計出金 / 純入金 / 出金してなかったら / 純入金差引後` を見て、生活側の出し入れを考慮した感覚と突き合わせる
+7. 必要なら `現在残高照合` を実行して、Binance 現在残高ベース総資産と履歴再構築残高の差を確認する
+8. `要確認` 画面で未知 / 未評価 / 重複疑いを確認する
+9. `エクスポート` 画面で年次 CSV / 国税庁補助 CSV / Excel / 分析 CSV / JSON を生成する
 
 ## サンプルファイル
 - `samples/binance_japan_sample.csv`

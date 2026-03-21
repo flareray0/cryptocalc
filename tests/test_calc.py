@@ -8,12 +8,14 @@ from app.services.import_service import ImportService
 from app.storage.app_state import load_latest_calc_run
 from app.storage.calc_window_state import load_latest_calc_window_run
 
+SAMPLES_DIR = Path(__file__).resolve().parents[1] / "samples"
+
 
 def _load_sample_data():
     service = ImportService()
-    service.import_file(Path(r"H:\cryptocalc\samples\manual_adjustments_sample.csv"), import_kind="manual_adjustment")
-    service.import_file(Path(r"H:\cryptocalc\samples\binance_japan_sample.csv"))
-    service.import_manual_rate_file(Path(r"H:\cryptocalc\samples\manual_rates_sample.csv"))
+    service.import_file(SAMPLES_DIR / "manual_adjustments_sample.csv", import_kind="manual_adjustment")
+    service.import_file(SAMPLES_DIR / "binance_japan_sample.csv")
+    service.import_manual_rate_file(SAMPLES_DIR / "manual_rates_sample.csv")
 
 
 def _import_manual_csv(tmp_path, content: str):

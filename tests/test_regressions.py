@@ -10,6 +10,8 @@ from app.services.import_service import ImportService
 from app.services.report_service import ReportService
 from app.storage.app_state import load_sync_status
 
+SAMPLES_DIR = Path(__file__).resolve().parents[1] / "samples"
+
 
 def test_methods_can_differ_when_late_year_buy_changes_total_average(tmp_path):
     manual_csv = tmp_path / "opening.csv"
@@ -78,9 +80,9 @@ def test_duplicate_detection_across_files(tmp_path):
 
 def test_nta_export_files_are_generated():
     importer = ImportService()
-    importer.import_file(Path(r"H:\cryptocalc\samples\manual_adjustments_sample.csv"), import_kind="manual_adjustment")
-    importer.import_file(Path(r"H:\cryptocalc\samples\binance_japan_sample.csv"))
-    importer.import_manual_rate_file(Path(r"H:\cryptocalc\samples\manual_rates_sample.csv"))
+    importer.import_file(SAMPLES_DIR / "manual_adjustments_sample.csv", import_kind="manual_adjustment")
+    importer.import_file(SAMPLES_DIR / "binance_japan_sample.csv")
+    importer.import_manual_rate_file(SAMPLES_DIR / "manual_rates_sample.csv")
     CalcService().run(year=2025, method=CalculationMethod.MOVING_AVERAGE)
 
     export_paths = ReportService().nta_export(method=CalculationMethod.MOVING_AVERAGE, year=2025)

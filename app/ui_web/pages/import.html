@@ -31,6 +31,20 @@
 </section>
 
 <section class="panel">
+  <h3>data フォルダ一括取込</h3>
+  <p class="muted">`{{ data_dir }}` 配下を再帰的に走査して、CSV / XLSX / XLSM をまとめて取り込むでよ。</p>
+  <ul class="list">
+    <li>通常の Binance 履歴はそのまま配置して大丈夫でよ。</li>
+    <li>`manual_adjustments` や `adjustments` を含むパス / ファイル名は手動補正として読むでよ。</li>
+    <li>`manual_rates` や `rates` を含むパス / ファイル名は JPY補完レートとして読むでよ。</li>
+    <li>同じ期間の authoritative な資産履歴がある時は、補助履歴の重複はできるだけ抑えるでよ。</li>
+  </ul>
+  <form action="/ui/import/data-folder" method="post">
+    <button type="submit">data フォルダを一括取込</button>
+  </form>
+</section>
+
+<section class="panel">
   <h3>取込後に確認するポイント</h3>
   <ul class="list">
     <li>未知カラムや未知取引種別は取込ログに残るよ。</li>
