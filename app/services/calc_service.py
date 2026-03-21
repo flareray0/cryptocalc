@@ -9,7 +9,7 @@ from uuid import uuid4
 from app.calc.inventory_engine import resolve_transaction_flow
 from app.calc.normalizer import sort_transactions
 from app.calc.pnl_engine import run_pnl_calculation
-from app.domain.enums import CalculationMethod
+from app.domain.enums import CalculationMethod, TransactionType
 from app.integrations.rate_input_adapter import ManualRateTable
 from app.services.audit_service import AuditService
 from app.storage.app_state import load_transactions, save_calc_run
@@ -245,6 +245,8 @@ class CalcService:
                 "fee_jpy": ZERO,
                 "reward_income_jpy": ZERO,
                 "realized_pnl_jpy": ZERO,
+                "transfer_in_quantity": ZERO,
+                "transfer_out_quantity": ZERO,
             }
         )
 
@@ -261,6 +263,8 @@ class CalcService:
                     "fee_jpy",
                     "reward_income_jpy",
                     "realized_pnl_jpy",
+                    "transfer_in_quantity",
+                    "transfer_out_quantity",
                 ):
                     value = row.get(field_name)
                     if value is not None:
@@ -280,6 +284,8 @@ class CalcService:
                     "fee_jpy": ZERO,
                     "reward_income_jpy": ZERO,
                     "realized_pnl_jpy": ZERO,
+                    "transfer_in_quantity": ZERO,
+                    "transfer_out_quantity": ZERO,
                 },
             )
             opening = opening_positions.get(asset, {})
@@ -289,10 +295,14 @@ class CalcService:
                     "asset": asset,
                     "opening_quantity": opening.get("quantity", ZERO),
                     "opening_cost_jpy": opening.get("cost_basis_total_jpy", ZERO),
+                    "opening_unknown_cost_quantity": opening.get("unknown_cost_quantity", ZERO),
                     "acquired_quantity": target["acquired_quantity"],
+                    "transfer_in_quantity": target["transfer_in_quantity"],
                     "disposed_quantity": target["disposed_quantity"],
+                    "transfer_out_quantity": target["transfer_out_quantity"],
                     "ending_quantity": ending.get("quantity", ZERO),
                     "ending_cost_jpy": ending.get("cost_basis_total_jpy", ZERO),
+                    "unknown_cost_quantity": ending.get("unknown_cost_quantity", ZERO),
                     "average_cost_per_unit_jpy": ending.get("avg_cost_per_unit_jpy", ZERO),
                     "acquired_cost_jpy": target["acquired_cost_jpy"],
                     "proceeds_jpy": target["proceeds_jpy"],
@@ -333,6 +343,7 @@ class CalcService:
                     "quantity": row.quantity,
                     "cost_basis_total_jpy": row.cost_basis_total_jpy,
                     "avg_cost_per_unit_jpy": row.avg_cost_per_unit_jpy,
+                    "unknown_cost_quantity": row.unknown_cost_quantity,
                 }
                 for row in result.positions
             }
@@ -344,24 +355,65 @@ class CalcService:
         rate_table: ManualRateTable,
     ) -> dict[str, dict[str, Decimal]]:
         positions: dict[str, dict[str, Decimal]] = {}
+
+        def _recompute(position: dict[str, Decimal]) -> None:
+            known_quantity = position["quantity"] - position["unknown_cost_quantity"]
+            if position["quantity"] <= ZERO:
+                position["quantity"] = ZERO
+                position["cost_basis_total_jpy"] = ZERO
+                position["avg_cost_per_unit_jpy"] = ZERO
+                position["unknown_cost_quantity"] = ZERO
+                return
+            if position["unknown_cost_quantity"] < ZERO:
+                position["unknown_cost_quantity"] = ZERO
+            if known_quantity <= ZERO or position["cost_basis_total_jpy"] <= ZERO:
+                position["cost_basis_total_jpy"] = ZERO
+                position["avg_cost_per_unit_jpy"] = ZERO
+                return
+            position["avg_cost_per_unit_jpy"] = position["cost_basis_total_jpy"] / known_quantity
+
         for tx in sort_transactions(transactions):
             flow = resolve_transaction_flow(tx, rate_table)
-            if flow.acquire_asset and flow.acquire_quantity and flow.acquire_value_jpy is not None:
+            if flow.acquire_asset and flow.acquire_quantity:
                 position = positions.setdefault(
                     flow.acquire_asset,
                     {
                         "quantity": ZERO,
                         "cost_basis_total_jpy": ZERO,
                         "avg_cost_per_unit_jpy": ZERO,
+                        "unknown_cost_quantity": ZERO,
                     },
                 )
                 position["quantity"] += flow.acquire_quantity
-                position["cost_basis_total_jpy"] += flow.acquire_value_jpy
-                position["avg_cost_per_unit_jpy"] = (
-                    ZERO
-                    if position["quantity"] == ZERO
-                    else position["cost_basis_total_jpy"] / position["quantity"]
+                if flow.acquire_value_jpy is not None:
+                    position["cost_basis_total_jpy"] += flow.acquire_value_jpy
+                else:
+                    position["unknown_cost_quantity"] += flow.acquire_quantity
+                _recompute(position)
+
+            if tx.tx_type is TransactionType.TRANSFER_OUT and tx.base_asset and tx.quantity:
+                position = positions.setdefault(
+                    tx.base_asset,
+                    {
+                        "quantity": ZERO,
+                        "cost_basis_total_jpy": ZERO,
+                        "avg_cost_per_unit_jpy": ZERO,
+                        "unknown_cost_quantity": ZERO,
+                    },
                 )
+                transfer_quantity = tx.quantity
+                if tx.fee_asset and tx.fee_asset == tx.base_asset and tx.fee_amount:
+                    transfer_quantity += tx.fee_amount
+                unknown_removed = min(position["unknown_cost_quantity"], transfer_quantity)
+                position["quantity"] -= unknown_removed
+                position["unknown_cost_quantity"] -= unknown_removed
+                remaining = transfer_quantity - unknown_removed
+                known_quantity = position["quantity"] - position["unknown_cost_quantity"]
+                if remaining > ZERO and known_quantity > ZERO:
+                    known_removed = min(known_quantity, remaining)
+                    position["quantity"] -= known_removed
+                    position["cost_basis_total_jpy"] -= position["avg_cost_per_unit_jpy"] * known_removed
+                _recompute(position)
 
             if flow.dispose_asset and flow.dispose_quantity:
                 position = positions.setdefault(
@@ -370,32 +422,43 @@ class CalcService:
                         "quantity": ZERO,
                         "cost_basis_total_jpy": ZERO,
                         "avg_cost_per_unit_jpy": ZERO,
+                        "unknown_cost_quantity": ZERO,
                     },
                 )
-                avg_cost = position["avg_cost_per_unit_jpy"]
-                cost_basis = avg_cost * flow.dispose_quantity if flow.proceeds_jpy is not None else None
-                if cost_basis is None:
-                    continue
-                position["quantity"] -= flow.dispose_quantity
-                position["cost_basis_total_jpy"] -= cost_basis
-                if position["quantity"] <= ZERO:
-                    position["quantity"] = ZERO
-                    position["cost_basis_total_jpy"] = ZERO
-                    position["avg_cost_per_unit_jpy"] = ZERO
-                else:
-                    position["avg_cost_per_unit_jpy"] = (
-                        position["cost_basis_total_jpy"] / position["quantity"]
-                    )
+                if flow.proceeds_jpy is not None:
+                    known_quantity = position["quantity"] - position["unknown_cost_quantity"]
+                    if known_quantity >= flow.dispose_quantity:
+                        cost_basis = position["avg_cost_per_unit_jpy"] * flow.dispose_quantity
+                        position["quantity"] -= flow.dispose_quantity
+                        position["cost_basis_total_jpy"] -= cost_basis
+                    else:
+                        known_consumed = min(known_quantity, flow.dispose_quantity)
+                        unknown_consumed = min(
+                            position["unknown_cost_quantity"],
+                            flow.dispose_quantity - known_consumed,
+                        )
+                        if known_consumed > ZERO:
+                            position["cost_basis_total_jpy"] -= (
+                                position["avg_cost_per_unit_jpy"] * known_consumed
+                            )
+                        position["quantity"] -= known_consumed + unknown_consumed
+                        position["unknown_cost_quantity"] -= unknown_consumed
+                    _recompute(position)
         return positions
 
     def _build_inventory_warnings(self, asset_summaries: list[dict], summary: dict) -> list[str]:
         warnings: list[str] = []
         negative_assets = []
+        unknown_cost_assets = []
         for row in asset_summaries:
             opening = Decimal(str(row.get("opening_quantity", "0") or "0"))
             ending = Decimal(str(row.get("ending_quantity", "0") or "0"))
+            opening_unknown = Decimal(str(row.get("opening_unknown_cost_quantity", "0") or "0"))
+            ending_unknown = Decimal(str(row.get("unknown_cost_quantity", "0") or "0"))
             if opening < ZERO or ending < ZERO:
                 negative_assets.append(row["asset"])
+            if opening_unknown > ZERO or ending_unknown > ZERO:
+                unknown_cost_assets.append(row["asset"])
 
         if negative_assets:
             joined = ", ".join(sorted(negative_assets))
@@ -403,6 +466,14 @@ class CalcService:
                 f"保有数量がマイナスになっている銘柄があります: {joined}。"
                 " 期首残高・過去年の取引・外部入出庫が不足している可能性が高く、"
                 "この集計は参考値として扱ってください。"
+            )
+
+        if unknown_cost_assets:
+            joined = ", ".join(sorted(set(unknown_cost_assets)))
+            warnings.append(
+                f"取得原価が未確定の入庫を含む銘柄があります: {joined}。"
+                " 外部入庫や期首残高の原価情報が不足していると、実現損益を正しく確定できません。"
+                " 期首残高CSVや手動補正CSVで補完してね。"
             )
 
         review_count = int(summary.get("review_required_count") or 0)

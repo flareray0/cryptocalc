@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from app.calc.inventory_engine import resolve_transaction_flow
 from app.calc.normalizer import sort_transactions
-from app.domain.enums import CalculationMethod
+from app.domain.enums import CalculationMethod, TransactionType
 from app.domain.models import CalculationRunResult, RealizedPnlRecord, RunningPosition
 
 
@@ -30,15 +30,33 @@ def calculate_moving_average(transactions: list, year: int, rate_lookup) -> Calc
             "fee_jpy": ZERO,
             "reward_income_jpy": ZERO,
             "realized_pnl_jpy": ZERO,
+            "transfer_in_quantity": ZERO,
+            "transfer_out_quantity": ZERO,
         }
     )
+
+    def _recompute_position(position: RunningPosition) -> None:
+        known_quantity = position.quantity - position.unknown_cost_quantity
+        if position.quantity <= ZERO:
+            position.quantity = ZERO
+            position.cost_basis_total_jpy = ZERO
+            position.avg_cost_per_unit_jpy = ZERO
+            position.unknown_cost_quantity = ZERO
+            return
+        if position.unknown_cost_quantity < ZERO:
+            position.unknown_cost_quantity = ZERO
+        if known_quantity <= ZERO or position.cost_basis_total_jpy <= ZERO:
+            position.cost_basis_total_jpy = ZERO
+            position.avg_cost_per_unit_jpy = ZERO
+            return
+        position.avg_cost_per_unit_jpy = position.cost_basis_total_jpy / known_quantity
 
     for tx in ordered:
         flow = resolve_transaction_flow(tx, rate_lookup)
         timestamp = tx.timestamp_jst
         year_matches = timestamp is not None and timestamp.year == year
 
-        if flow.acquire_asset and flow.acquire_quantity and flow.acquire_value_jpy is not None:
+        if flow.acquire_asset and flow.acquire_quantity:
             position = positions.setdefault(
                 flow.acquire_asset,
                 RunningPosition(
@@ -48,13 +66,15 @@ def calculate_moving_average(transactions: list, year: int, rate_lookup) -> Calc
                     avg_cost_per_unit_jpy=ZERO,
                     method=CalculationMethod.MOVING_AVERAGE,
                     last_updated_at=None,
+                    unknown_cost_quantity=ZERO,
                 ),
             )
             position.quantity += flow.acquire_quantity
-            position.cost_basis_total_jpy += flow.acquire_value_jpy
-            position.avg_cost_per_unit_jpy = (
-                ZERO if position.quantity == ZERO else position.cost_basis_total_jpy / position.quantity
-            )
+            if flow.acquire_value_jpy is not None:
+                position.cost_basis_total_jpy += flow.acquire_value_jpy
+            else:
+                position.unknown_cost_quantity += flow.acquire_quantity
+            _recompute_position(position)
             position.last_updated_at = timestamp
             inventory_timeline.append(
                 {
@@ -64,14 +84,66 @@ def calculate_moving_average(transactions: list, year: int, rate_lookup) -> Calc
                     "quantity": flow.acquire_quantity,
                     "avg_cost_per_unit_jpy": position.avg_cost_per_unit_jpy,
                     "cost_basis_total_jpy": position.cost_basis_total_jpy,
+                    "unknown_cost_quantity": position.unknown_cost_quantity,
                     "tx_id": tx.id,
                 }
             )
             if year_matches:
-                asset_stats[flow.acquire_asset]["acquired_quantity"] += flow.acquire_quantity
-                asset_stats[flow.acquire_asset]["acquired_cost_jpy"] += flow.acquire_value_jpy
+                if tx.tx_type is TransactionType.TRANSFER_IN:
+                    asset_stats[flow.acquire_asset]["transfer_in_quantity"] += flow.acquire_quantity
+                else:
+                    asset_stats[flow.acquire_asset]["acquired_quantity"] += flow.acquire_quantity
+                    asset_stats[flow.acquire_asset]["acquired_cost_jpy"] += flow.acquire_value_jpy or ZERO
                 if flow.income_jpy:
                     asset_stats[flow.acquire_asset]["reward_income_jpy"] += flow.income_jpy
+
+        if tx.tx_type is TransactionType.TRANSFER_OUT and tx.base_asset and tx.quantity:
+            position = positions.setdefault(
+                tx.base_asset,
+                RunningPosition(
+                    asset=tx.base_asset,
+                    quantity=ZERO,
+                    cost_basis_total_jpy=ZERO,
+                    avg_cost_per_unit_jpy=ZERO,
+                    method=CalculationMethod.MOVING_AVERAGE,
+                    last_updated_at=None,
+                    unknown_cost_quantity=ZERO,
+                ),
+            )
+            transfer_quantity = tx.quantity
+            if tx.fee_asset and tx.fee_asset == tx.base_asset and tx.fee_amount:
+                transfer_quantity += tx.fee_amount
+
+            if position.quantity < transfer_quantity:
+                flow.review_reasons = list(flow.review_reasons or [])
+                if "保有数量不足" not in flow.review_reasons:
+                    flow.review_reasons.append("保有数量不足")
+
+            unknown_consumed = min(position.unknown_cost_quantity, transfer_quantity)
+            position.quantity -= unknown_consumed
+            position.unknown_cost_quantity -= unknown_consumed
+            remaining = transfer_quantity - unknown_consumed
+            known_quantity = position.quantity - position.unknown_cost_quantity
+            if remaining > ZERO and known_quantity > ZERO:
+                known_consumed = min(known_quantity, remaining)
+                position.quantity -= known_consumed
+                position.cost_basis_total_jpy -= position.avg_cost_per_unit_jpy * known_consumed
+            _recompute_position(position)
+            position.last_updated_at = timestamp
+            inventory_timeline.append(
+                {
+                    "timestamp": timestamp,
+                    "asset": tx.base_asset,
+                    "event": "transfer_out",
+                    "quantity": transfer_quantity,
+                    "avg_cost_per_unit_jpy": position.avg_cost_per_unit_jpy,
+                    "cost_basis_total_jpy": position.cost_basis_total_jpy,
+                    "unknown_cost_quantity": position.unknown_cost_quantity,
+                    "tx_id": tx.id,
+                }
+            )
+            if year_matches:
+                asset_stats[tx.base_asset]["transfer_out_quantity"] += transfer_quantity
 
         if flow.dispose_asset and flow.dispose_quantity:
             position = positions.setdefault(
@@ -83,23 +155,36 @@ def calculate_moving_average(transactions: list, year: int, rate_lookup) -> Calc
                     avg_cost_per_unit_jpy=ZERO,
                     method=CalculationMethod.MOVING_AVERAGE,
                     last_updated_at=None,
+                    unknown_cost_quantity=ZERO,
                 ),
             )
             avg_cost = position.avg_cost_per_unit_jpy
-            cost_basis = avg_cost * flow.dispose_quantity if flow.proceeds_jpy is not None else None
+            cost_basis = None
             if position.quantity < flow.dispose_quantity:
                 flow.review_reasons = list(flow.review_reasons or [])
                 if "保有数量不足" not in flow.review_reasons:
                     flow.review_reasons.append("保有数量不足")
-            if cost_basis is not None:
-                position.quantity -= flow.dispose_quantity
-                position.cost_basis_total_jpy -= cost_basis
-                if position.quantity <= ZERO:
-                    position.quantity = ZERO
-                    position.cost_basis_total_jpy = ZERO
-                    position.avg_cost_per_unit_jpy = ZERO
+            if flow.proceeds_jpy is not None:
+                known_quantity = position.quantity - position.unknown_cost_quantity
+                if known_quantity >= flow.dispose_quantity:
+                    cost_basis = avg_cost * flow.dispose_quantity
+                    position.quantity -= flow.dispose_quantity
+                    position.cost_basis_total_jpy -= cost_basis
                 else:
-                    position.avg_cost_per_unit_jpy = position.cost_basis_total_jpy / position.quantity
+                    known_consumed = min(known_quantity, flow.dispose_quantity)
+                    unknown_consumed = min(
+                        position.unknown_cost_quantity,
+                        flow.dispose_quantity - known_consumed,
+                    )
+                    if unknown_consumed > ZERO:
+                        flow.review_reasons = list(flow.review_reasons or [])
+                        if "入庫原価未確定" not in flow.review_reasons:
+                            flow.review_reasons.append("入庫原価未確定")
+                    if known_consumed > ZERO:
+                        position.cost_basis_total_jpy -= avg_cost * known_consumed
+                    position.quantity -= known_consumed + unknown_consumed
+                    position.unknown_cost_quantity -= unknown_consumed
+                _recompute_position(position)
             position.last_updated_at = timestamp
 
             if year_matches:
@@ -137,6 +222,7 @@ def calculate_moving_average(transactions: list, year: int, rate_lookup) -> Calc
                     "quantity": flow.dispose_quantity,
                     "avg_cost_per_unit_jpy": position.avg_cost_per_unit_jpy,
                     "cost_basis_total_jpy": position.cost_basis_total_jpy,
+                    "unknown_cost_quantity": position.unknown_cost_quantity,
                     "tx_id": tx.id,
                 }
             )
@@ -179,6 +265,9 @@ def calculate_moving_average(transactions: list, year: int, rate_lookup) -> Calc
                 "proceeds_jpy": stats["proceeds_jpy"],
                 "fee_jpy": stats["fee_jpy"],
                 "reward_income_jpy": stats["reward_income_jpy"],
+                "transfer_in_quantity": stats["transfer_in_quantity"],
+                "transfer_out_quantity": stats["transfer_out_quantity"],
+                "unknown_cost_quantity": position.unknown_cost_quantity if position else ZERO,
             }
         )
 

@@ -92,8 +92,11 @@
         <tr>
           <th>asset</th>
           <th>取得数量</th>
+          <th>入庫数量</th>
           <th>売却数量</th>
+          <th>出庫数量</th>
           <th>年末残高</th>
+          <th>原価不明残高</th>
           <th>平均取得単価</th>
           <th>実現損益</th>
         </tr>
@@ -103,8 +106,11 @@
         <tr>
           <td>{{ row.asset }}</td>
           <td>{{ row.acquired_quantity }}</td>
+          <td>{{ row.transfer_in_quantity or 0 }}</td>
           <td>{{ row.disposed_quantity }}</td>
+          <td>{{ row.transfer_out_quantity or 0 }}</td>
           <td>{{ row.ending_quantity }}</td>
+          <td>{{ row.unknown_cost_quantity or 0 }}</td>
           <td>{{ row.average_cost_per_unit_jpy }}</td>
           <td>{{ row.realized_pnl_jpy }}</td>
         </tr>
@@ -198,8 +204,11 @@
           <th>asset</th>
           <th>期首数量</th>
           <th>取得数量</th>
+          <th>入庫数量</th>
           <th>売却数量</th>
+          <th>出庫数量</th>
           <th>期末数量</th>
+          <th>原価不明残高</th>
           <th>平均取得単価</th>
           <th>実現損益</th>
         </tr>
@@ -210,8 +219,11 @@
           <td>{{ row.asset }}</td>
           <td>{{ row.opening_quantity }}</td>
           <td>{{ row.acquired_quantity }}</td>
+          <td>{{ row.transfer_in_quantity or 0 }}</td>
           <td>{{ row.disposed_quantity }}</td>
+          <td>{{ row.transfer_out_quantity or 0 }}</td>
           <td>{{ row.ending_quantity }}</td>
+          <td>{{ row.unknown_cost_quantity or 0 }}</td>
           <td>{{ row.average_cost_per_unit_jpy }}</td>
           <td>{{ row.realized_pnl_jpy }}</td>
         </tr>

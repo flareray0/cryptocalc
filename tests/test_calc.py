@@ -16,6 +16,12 @@ def _load_sample_data():
     service.import_manual_rate_file(Path(r"H:\cryptocalc\samples\manual_rates_sample.csv"))
 
 
+def _import_manual_csv(tmp_path, content: str):
+    path = tmp_path / "manual_adjustments.csv"
+    path.write_text(content.strip() + "\n", encoding="utf-8")
+    ImportService().import_file(path, import_kind="manual_adjustment")
+
+
 def test_moving_average_calculation():
     _load_sample_data()
     result = CalcService().run(year=2025, method=CalculationMethod.MOVING_AVERAGE)
@@ -79,3 +85,46 @@ def test_calc_window_range_and_all_time():
     assert all_time_result["aggregate_summary"]["start_year"] == 2024
     assert all_time_result["aggregate_summary"]["end_year"] == 2025
     assert len(all_time_result["yearly_rows"]) == 2
+
+
+def test_transfer_in_and_out_are_reflected_in_moving_average(tmp_path):
+    _import_manual_csv(
+        tmp_path,
+        """
+timestamp_utc,tx_type,asset,quantity,price_per_unit_jpy,gross_amount_jpy,side,note
+2024-12-31 00:00:00,opening_balance,BTC,1,10000000,10000000,buy,opening
+2025-01-10 00:00:00,transfer_in,BTC,0.5,,,none,external deposit
+2025-02-15 00:00:00,transfer_out,BTC,0.2,,,none,external withdraw
+""",
+    )
+
+    result = CalcService().run(year=2025, method=CalculationMethod.MOVING_AVERAGE)
+    btc_row = next(row for row in result["asset_summaries"] if row["asset"] == "BTC")
+
+    assert str(btc_row["ending_quantity"]) == "1.3"
+    assert str(btc_row["transfer_in_quantity"]) == "0.5"
+    assert str(btc_row["transfer_out_quantity"]) == "0.2"
+    assert str(btc_row["unknown_cost_quantity"]) == "0.3"
+    assert any("取得原価が未確定の入庫" in warning for warning in result["warnings"])
+
+
+def test_transfer_in_and_out_are_reflected_in_total_average(tmp_path):
+    _import_manual_csv(
+        tmp_path,
+        """
+timestamp_utc,tx_type,asset,quantity,price_per_unit_jpy,gross_amount_jpy,side,note
+2024-12-31 00:00:00,opening_balance,BTC,1,10000000,10000000,buy,opening
+2025-01-10 00:00:00,transfer_in,BTC,0.5,,,none,external deposit
+2025-02-15 00:00:00,transfer_out,BTC,0.2,,,none,external withdraw
+""",
+    )
+
+    result = CalcService().run(year=2025, method=CalculationMethod.TOTAL_AVERAGE)
+    btc_row = next(row for row in result["asset_summaries"] if row["asset"] == "BTC")
+
+    assert str(btc_row["opening_quantity"]) == "1"
+    assert str(btc_row["ending_quantity"]) == "1.3"
+    assert str(btc_row["transfer_in_quantity"]) == "0.5"
+    assert str(btc_row["transfer_out_quantity"]) == "0.2"
+    assert str(btc_row["unknown_cost_quantity"]) == "0.3"
+    assert any("取得原価が未確定の入庫" in warning for warning in result["warnings"])

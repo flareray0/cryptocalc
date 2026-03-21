@@ -217,6 +217,24 @@ def resolve_transaction_flow(tx: NormalizedTransaction, rate_lookup) -> Resolved
             rate_source=tx.jpy_rate_source,
         )
 
+    if tx.tx_type is TransactionType.TRANSFER_IN:
+        gross = tx.gross_amount_jpy
+        if gross is None and tx.price_per_unit_jpy is not None and tx.quantity is not None:
+            gross = tx.price_per_unit_jpy * tx.quantity
+        if gross is None:
+            review_reasons.append("入庫原価が未確定")
+        return ResolvedFlow(
+            tx=tx,
+            acquire_asset=tx.base_asset,
+            acquire_quantity=tx.quantity,
+            acquire_value_jpy=gross,
+            fee_jpy=fee_jpy,
+            fee_asset=tx.fee_asset,
+            fee_quantity=tx.fee_amount,
+            review_reasons=review_reasons,
+            rate_source=tx.jpy_rate_source or fee_source,
+        )
+
     if tx.tx_type is TransactionType.ADJUSTMENT:
         if tx.side is Side.BUY:
             return ResolvedFlow(
@@ -241,7 +259,7 @@ def resolve_transaction_flow(tx: NormalizedTransaction, rate_lookup) -> Resolved
         review_reasons.append("調整仕訳のside指定が不足")
         return ResolvedFlow(tx=tx, review_reasons=review_reasons)
 
-    if tx.tx_type in {TransactionType.TRANSFER_IN, TransactionType.TRANSFER_OUT}:
+    if tx.tx_type is TransactionType.TRANSFER_OUT:
         return ResolvedFlow(
             tx=tx,
             review_reasons=review_reasons,

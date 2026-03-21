@@ -69,6 +69,7 @@ class RunningPosition:
     avg_cost_per_unit_jpy: Decimal
     method: CalculationMethod
     last_updated_at: datetime | None
+    unknown_cost_quantity: Decimal = Decimal("0")
 
 
 @dataclass(slots=True)
