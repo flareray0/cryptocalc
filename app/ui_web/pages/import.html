@@ -36,7 +36,16 @@
     <li>未知カラムや未知取引種別は取込ログに残るよ。</li>
     <li>CSV は read-only import で、元ファイルは上書きしないよ。</li>
     <li>要確認件数が増えたら、JPY未評価や未知取引が混ざっていないか見てね。</li>
+    <li>取込形式を直したあとに再取込する時は、先に「取引データをリセット」を押すと混ざりにくいよ。</li>
   </ul>
+</section>
+
+<section class="panel">
+  <h3>取引データのリセット</h3>
+  <p class="muted">設定や API キーは残したまま、取引データ / 取込履歴 / 計算結果 / 分析結果だけ消して再取込できるよ。</p>
+  <form action="/ui/import/reset" method="post">
+    <button type="submit">取引データをリセット</button>
+  </form>
 </section>
 
 <section class="panel">

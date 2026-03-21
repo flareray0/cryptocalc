@@ -22,7 +22,7 @@ from app.services.calc_service import CalcService
 from app.services.exchange_sync_service import ExchangeSyncService
 from app.services.import_service import ImportService
 from app.services.report_service import ReportService
-from app.storage.app_state import load_import_batches, load_transactions
+from app.storage.app_state import clear_imported_state, load_import_batches, load_transactions
 from app.storage.json_store import transaction_to_dict
 from app.storage.settings import get_paths, load_settings, save_settings
 from app.ui_web.charts import build_line_chart
@@ -471,6 +471,20 @@ def ui_import_manual_rates(file: UploadFile = File(...)):
     finally:
         temp_path.unlink(missing_ok=True)
     return RedirectResponse("/import?message=JPY補完レートCSVを取り込みました", status_code=303)
+
+
+@app.post("/ui/import/reset")
+def ui_import_reset():
+    removed = clear_imported_state()
+    params = urlencode(
+        {
+            "message": (
+                "取引データをリセットしました。"
+                f" transactions={removed['transactions']}, import_batches={removed['import_batches']}"
+            )
+        }
+    )
+    return RedirectResponse(f"/import?{params}", status_code=303)
 
 
 @app.post("/ui/calc/run")

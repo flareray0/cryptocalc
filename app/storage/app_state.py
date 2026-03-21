@@ -125,3 +125,39 @@ def load_latest_calc_run(
             continue
         return load_calc_run(row["run_id"])
     return None
+
+
+def clear_imported_state() -> dict[str, int]:
+    paths = get_paths()
+    removed = {
+        "transactions": 1 if _transactions_path().exists() else 0,
+        "import_batches": 1 if _batches_path().exists() else 0,
+    }
+    _transactions_path().unlink(missing_ok=True)
+    _batches_path().unlink(missing_ok=True)
+
+    calc_run_files = list(paths.calc_runs.glob("*.json"))
+    for path in calc_run_files:
+        path.unlink(missing_ok=True)
+    (paths.calc_runs / "index.json").unlink(missing_ok=True)
+
+    analysis_run_files = list((paths.app_data / "analysis_runs").glob("*.json"))
+    for path in analysis_run_files:
+        path.unlink(missing_ok=True)
+    (paths.app_data / "analysis_runs" / "index.json").unlink(missing_ok=True)
+
+    calc_window_files = list((paths.app_data / "calc_window_runs").glob("*.json"))
+    for path in calc_window_files:
+        path.unlink(missing_ok=True)
+    (paths.app_data / "calc_window_runs" / "index.json").unlink(missing_ok=True)
+
+    analysis_window_files = list((paths.app_data / "analysis_window_runs").glob("*.json"))
+    for path in analysis_window_files:
+        path.unlink(missing_ok=True)
+    (paths.app_data / "analysis_window_runs" / "index.json").unlink(missing_ok=True)
+
+    removed["calc_runs"] = len(calc_run_files)
+    removed["analysis_runs"] = len(analysis_run_files)
+    removed["calc_window_runs"] = len(calc_window_files)
+    removed["analysis_window_runs"] = len(analysis_window_files)
+    return removed

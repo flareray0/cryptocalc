@@ -65,3 +65,7 @@ def test_api_import_calc_and_report():
     response = client.get("/api/v1/transactions/review-required", params={"year": 2025})
     assert response.status_code == 200
     assert response.json()["count"] >= 1
+
+    response = client.post("/api/v1/import/reset")
+    assert response.status_code == 200
+    assert response.json()["ok"] is True

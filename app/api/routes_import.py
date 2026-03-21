@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, Query, UploadFile
 
 from app.storage.app_state import load_transactions
+from app.storage.app_state import clear_imported_state
 from app.storage.json_store import transaction_to_dict
 from app.storage.settings import get_paths
 from app.services.import_service import ImportService
@@ -60,6 +61,16 @@ def import_manual_rates(file: UploadFile = File(...)):
         return service.import_manual_rate_file(temp_path)
     finally:
         temp_path.unlink(missing_ok=True)
+
+
+@router.post("/import/reset")
+def reset_imported_data():
+    removed = clear_imported_state()
+    return {
+        "ok": True,
+        "removed": removed,
+        "message": "取引データと計算結果をリセットしました。設定やAPIキーはそのままだよ。",
+    }
 
 
 @router.get("/transactions")
